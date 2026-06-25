@@ -1,5 +1,7 @@
 # 电商套图生成工具
 
+ecom-kit-generator
+
 Phase 1 developer demo: single product upload, `rembg` background removal, mock provider-based image generation, and one Taobao 800x800 white-background ecommerce image.
 
 ## Backend
