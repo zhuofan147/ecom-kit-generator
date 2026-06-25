@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-page: #eef2f6;
+  --color-page-soft: rgba(255, 255, 255, 0.88);
+  --color-ink: #17202a;
+  --color-muted: #475569;
+  --color-subtle: #64748b;
+  --color-line: #d8dee8;
+  --color-panel: #f7f9fc;
+  --color-surface: #ffffff;
+  --color-field: #ffffff;
+  --color-selected-bg: #ecfdf5;
+  --color-selected-ring: rgba(15, 118, 110, 0.22);
+  --color-action: #0f766e;
+  --color-accent: #b45309;
+  background: var(--color-page);
+  color: var(--color-ink);
+}
+
+html[data-theme="black"] {
+  color-scheme: dark;
+  --color-page: #0f172a;
+  --color-page-soft: rgba(15, 23, 42, 0.92);
+  --color-ink: #e5edf7;
+  --color-muted: #cbd5e1;
+  --color-subtle: #94a3b8;
+  --color-line: #334155;
+  --color-panel: #111827;
+  --color-surface: #111827;
+  --color-field: #0b1220;
+  --color-selected-bg: #0f2638;
+  --color-selected-ring: rgba(56, 189, 248, 0.24);
+  --color-action: #38bdf8;
+  --color-accent: #f59e0b;
+}
+
+html[data-theme="blue"] {
+  --color-page: #eaf2ff;
+  --color-page-soft: rgba(255, 255, 255, 0.9);
+  --color-ink: #13213a;
+  --color-muted: #475569;
+  --color-subtle: #64748b;
+  --color-line: #c7d7ee;
+  --color-panel: #f5f8ff;
+  --color-surface: #ffffff;
+  --color-field: #ffffff;
+  --color-selected-bg: #edf5ff;
+  --color-selected-ring: rgba(29, 78, 216, 0.2);
+  --color-action: #1d4ed8;
+  --color-accent: #7c3aed;
+}
+
+html[data-theme="green"] {
+  --color-page: #eef2f6;
+  --color-page-soft: rgba(255, 255, 255, 0.88);
+  --color-ink: #17202a;
+  --color-muted: #475569;
+  --color-subtle: #64748b;
+  --color-line: #d8dee8;
+  --color-panel: #f7f9fc;
+  --color-surface: #ffffff;
+  --color-field: #ffffff;
+  --color-selected-bg: #ecfdf5;
+  --color-selected-ring: rgba(15, 118, 110, 0.22);
+  --color-action: #0f766e;
+  --color-accent: #b45309;
+}
+
+html[data-theme="white"] {
+  --color-page: #ffffff;
+  --color-page-soft: rgba(255, 255, 255, 0.96);
+  --color-ink: #111827;
+  --color-muted: #374151;
+  --color-subtle: #6b7280;
+  --color-line: #e5e7eb;
+  --color-panel: #ffffff;
+  --color-surface: #ffffff;
+  --color-field: #ffffff;
+  --color-selected-bg: #f3f4f6;
+  --color-selected-ring: rgba(17, 24, 39, 0.14);
+  --color-action: #111827;
+  --color-accent: #2563eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, var(--color-page-soft), color-mix(in srgb, var(--color-page) 96%, transparent)),
+    var(--color-page);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.bg-white {
+  background-color: var(--color-surface);
+}
+
+.bg-panel {
+  background-color: var(--color-panel);
+}
+
+.bg-slate-50,
+.hover\:bg-slate-50:hover {
+  background-color: color-mix(in srgb, var(--color-panel) 82%, var(--color-surface));
+}
+
+.bg-slate-100 {
+  background-color: color-mix(in srgb, var(--color-panel) 70%, var(--color-line));
+}
+
+.bg-slate-200 {
+  background-color: color-mix(in srgb, var(--color-panel) 52%, var(--color-line));
+}
+
+input:not([type="radio"]):not([type="checkbox"]):not([type="file"]),
+textarea,
+select {
+  background-color: var(--color-field);
+  color: var(--color-ink);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-subtle);
+}
+
+.text-slate-300,
+.text-slate-400 {
+  color: var(--color-subtle);
+}
+
+.text-slate-500,
+.text-slate-600,
+.text-slate-700 {
+  color: var(--color-muted);
+}
+
+.theme-swatch-white {
+  background-color: #ffffff;
+}
+
+.selected-card {
+  border-color: var(--color-action);
+  background-color: var(--color-selected-bg);
+  box-shadow:
+    inset 3px 0 0 var(--color-action),
+    0 0 0 1px var(--color-selected-ring);
+}
+
+.peer:checked + .selectable-card {
+  border-color: var(--color-action);
+  background-color: var(--color-selected-bg);
+  box-shadow:
+    inset 3px 0 0 var(--color-action),
+    0 0 0 1px var(--color-selected-ring);
+}
+
+.selected-badge {
+  border-color: color-mix(in srgb, var(--color-action) 45%, var(--color-line));
+  background-color: var(--color-selected-bg);
+  color: var(--color-action);
+}
