@@ -1,4 +1,6 @@
-import type { JobResponse, KitSizeMap, KitType, Platform, ProductInfo, ProductPlan, UploadResponse } from "@/types";
+import type { JobResponse, KitSizeMap, KitType, ModelConfig, Platform, ProductInfo, ProductPlan, UploadResponse } from "@/types";
+
+type ApiModelConfig = Pick<ModelConfig, "apiUrl" | "apiKey" | "model">;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ||
   (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
@@ -30,12 +32,14 @@ export async function createGenerationJob(input: {
   kitSizes?: KitSizeMap;
   plannedPrompts?: Partial<Record<KitType, string>>;
   provider?: string;
-  llmConfig?: { apiUrl: string; apiKey: string; model: string };
+  llmConfig?: ApiModelConfig;
+  imageConfig?: ApiModelConfig;
+  visionConfig?: ApiModelConfig;
 }) {
   const response = await fetch(`${API_BASE_URL}/api/generate/kit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({...buildGenerationPayload(input), provider: input.provider || "agnes", run_plan: false, llm_config: input.llmConfig ? { apiUrl: input.llmConfig.apiUrl, apiKey: input.llmConfig.apiKey, model: input.llmConfig.model } : {}})
+    body: JSON.stringify({...buildGenerationPayload(input), provider: input.provider || "agnes", run_plan: false, llm_config: modelConfigPayload(input.llmConfig)})
   });
   return parseResponse<{ job_id: string; status: string; total_images: number }>(response);
 }
@@ -46,12 +50,13 @@ export async function createProductPlan(input: {
   platform: Platform;
   kitTypes: KitType[];
   kitSizes?: KitSizeMap;
-  llmConfig?: { apiUrl: string; apiKey: string; model: string };
+  llmConfig?: ApiModelConfig;
+  visionConfig?: ApiModelConfig;
 }): Promise<ProductPlan> {
   const response = await fetch(`${API_BASE_URL}/api/plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({...buildPlanPayload(input), llm_config: input.llmConfig ? { apiUrl: input.llmConfig.apiUrl, apiKey: input.llmConfig.apiKey, model: input.llmConfig.model } : {}})
+    body: JSON.stringify({...buildPlanPayload(input), llm_config: modelConfigPayload(input.llmConfig), vision_config: modelConfigPayload(input.visionConfig)})
   });
   return parseResponse(response);
 }
@@ -159,6 +164,8 @@ export function buildGenerationPayload(input: {
   kitTypes: KitType[];
   kitSizes?: KitSizeMap;
   plannedPrompts?: Partial<Record<KitType, string>>;
+  imageConfig?: ApiModelConfig;
+  visionConfig?: ApiModelConfig;
 }) {
   return {
     product_id: input.productId,
@@ -177,5 +184,11 @@ export function buildGenerationPayload(input: {
     },
     kit_types: input.kitTypes,
     kit_sizes: input.kitSizes ?? {},
+    image_config: modelConfigPayload(input.imageConfig),
+    vision_config: modelConfigPayload(input.visionConfig),
   };
+}
+
+function modelConfigPayload(config?: ApiModelConfig) {
+  return config ? { apiUrl: config.apiUrl, apiKey: config.apiKey, model: config.model } : {};
 }

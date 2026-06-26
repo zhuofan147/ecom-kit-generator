@@ -1,4 +1,4 @@
-"""Image generation: abstract provider + placeholder compositor for all kit types."""
+"""Image generation: abstract provider + real AI provider implementations."""
 
 import asyncio
 from dataclasses import dataclass, field
@@ -38,22 +38,6 @@ class ImageGenerationProvider:
 
     async def inpaint(self, *args, **kwargs) -> ImageGenerationResult:
         raise NotImplementedError("Inpainting is reserved for Phase 2.")
-
-
-class MockImageGenerationProvider(ImageGenerationProvider):
-    provider_name = "mock"
-
-    async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        """Minimal placeholder — one solid-colour image per kit type."""
-        from PIL import Image, ImageColor
-        request.output_path.parent.mkdir(parents=True, exist_ok=True)
-        bg = Image.new("RGB", (request.width, request.height), "#1A1A2E")
-        bg.save(request.output_path, "PNG")
-        return ImageGenerationResult(
-            path=request.output_path,
-            provider="mock",
-            prompt=request.prompt,
-        )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -109,7 +93,7 @@ class SiliconFlowProvider(ImageGenerationProvider):
         }
 
         req = Request(self.endpoint, data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
 
         try:
             with urlopen(req, timeout=120, context=ssl_context()) as resp:
@@ -181,7 +165,7 @@ class FalAiProvider(ImageGenerationProvider):
             self.endpoint,
             data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Key {self.api_key}",
+                "Authorization": f"Key {api_key}",
                 "Content-Type": "application/json",
             },
         )
@@ -200,7 +184,7 @@ class FalAiProvider(ImageGenerationProvider):
             time.sleep(2)
             status_req = Request(
                 f"https://fal.run/{request_id}/status" if request_id else self.endpoint + "/status",
-                headers={"Authorization": f"Key {self.api_key}"},
+                headers={"Authorization": f"Key {api_key}"},
             )
             try:
                 with urlopen(status_req, timeout=10, context=ssl_context()) as resp:
@@ -342,7 +326,7 @@ class AgnesProvider(ImageGenerationProvider):
             # Step 1: POST to Agnes API via curl (auto-follows system proxy)
             proc = await asyncio.create_subprocess_exec(
                 "curl", "-s", "-X", "POST", self.endpoint,
-                "-H", f"Authorization: Bearer {self.api_key}",
+                "-H", f"Authorization: Bearer {api_key}",
                 "-H", "Content-Type: application/json",
                 "-d", f"@{payload_file}",
                 "--connect-timeout", "30", "--max-time", "120",
@@ -428,7 +412,7 @@ class VolcEngineArkProvider(ImageGenerationProvider):
             self.endpoint,
             data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
         )
@@ -440,7 +424,7 @@ class VolcEngineArkProvider(ImageGenerationProvider):
             body = e.read().decode(errors="replace")
             if isinstance(payload.get("image"), list):
                 payload["image"] = payload["image"][0]
-                data = self._submit_payload(payload)
+                data = self._submit_payload(payload, api_key)
             else:
                 raise RuntimeError(f"VolcEngine Ark request failed ({e.code}): {body[:500]}")
         except URLError as e:
@@ -472,12 +456,12 @@ class VolcEngineArkProvider(ImageGenerationProvider):
             prompt=request.prompt,
         )
 
-    def _submit_payload(self, payload: dict):
+    def _submit_payload(self, payload: dict, api_key: str):
         req = Request(
             self.endpoint,
             data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
         )
@@ -551,15 +535,11 @@ def _find_meta(name: str) -> ProviderMeta | None:
 
 def create_provider(name: str) -> ImageGenerationProvider:
     """Create a provider instance by name, reading endpoint/model_id from config."""
-    if name == "mock":
-        # Placeholder: minimal solid-colour fallback, no config needed
-        return MockImageGenerationProvider()
-
     meta = _find_meta(name)
     if meta is None:
         available = [m.name for m in PROVIDER_REGISTRY]
         raise ValueError(
-            f"Unknown provider: {name}. Available: mock, {', '.join(available)}"
+            f"Unknown provider: {name}. Available: {', '.join(available)}"
         )
 
     cls = _get_provider_class(meta.provider_class)

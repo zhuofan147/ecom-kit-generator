@@ -30,7 +30,7 @@ PRODUCT_CONSISTENCY_PROMPT = (
 
 class JobStore:
     def __init__(self, output_dir: Path,
-                  provider_name: str = "mock"):
+                  provider_name: str = "volcengine-ark"):
         self.output_dir = output_dir
         self.history_dir = output_dir / "jobs"
         self.provider_name = provider_name
@@ -60,6 +60,7 @@ class JobStore:
         size_overrides: dict[KitType, tuple[int, int]] | None = None,
         provider: str | None = None,
         reference_image_paths: list[Path] | None = None,
+        image_api_key: str = "",
     ) -> Job:
         # Normalize kit_types to KitType enum
         if kit_types is None:
@@ -92,6 +93,7 @@ class JobStore:
         object.__setattr__(job, '_total_images', len(normalized))
         object.__setattr__(job, '_provider', provider or self.provider_name)
         object.__setattr__(job, '_size_overrides', size_overrides or {})
+        object.__setattr__(job, '_image_api_key', image_api_key)
         self._jobs[job.id] = job
         self._save_job(job)
         return job
@@ -148,6 +150,7 @@ class JobStore:
             try:
                 kit_types: list[KitType] = getattr(job, '_kit_types', [KitType.MAIN_WHITE])
                 size_overrides = getattr(job, '_size_overrides', {})
+                image_api_key = getattr(job, '_image_api_key', "")
                 product_info = product_info_from_dict(job.product_info)
                 specs = build_kit_specs(
                     job.platform,
@@ -181,6 +184,7 @@ class JobStore:
                                 output_path=output_path,
                                 spec=spec,
                                 product_info=product_info,
+                                api_key=image_api_key,
                             )
                         except Exception as exc:
                             results[idx] = self._failed_result(spec, str(exc))
@@ -222,6 +226,7 @@ class JobStore:
                 raise KeyError(f"Unknown kit type for job: {kit_type}")
 
             product_info = product_info_from_dict(job.product_info)
+            image_api_key = getattr(job, '_image_api_key', "")
             job.status = JobStatus.RUNNING
             job.progress = 20
             job.message = f"正在重新生成 {spec.label}"
@@ -244,6 +249,7 @@ class JobStore:
                     output_path=output_path,
                     spec=spec,
                     product_info=product_info,
+                    api_key=image_api_key,
                 )
             except Exception as exc:
                 result = self._failed_result(spec, str(exc))
@@ -292,6 +298,7 @@ class JobStore:
         output_path: Path,
         spec,
         product_info,
+        api_key: str = "",
     ) -> GeneratedImage:
         result = await self._generate_one(
             masked_path=masked_path,
@@ -299,6 +306,7 @@ class JobStore:
             output_path=output_path,
             spec=spec,
             product_info=product_info,
+            api_key=api_key,
         )
         return GeneratedImage(
             id=uuid4().hex,
@@ -329,6 +337,7 @@ class JobStore:
         output_path: Path,
         spec,
         product_info,
+        api_key: str = "",
     ) -> ImageGenerationResult:
         provider = self.provider
         generation_request = ImageGenerationRequest(
@@ -342,6 +351,7 @@ class JobStore:
             product_name=product_info.name,
             selling_points=product_info.selling_points,
             brand_tone=product_info.brand_tone,
+            api_key=api_key,
         )
 
         def run_provider() -> ImageGenerationResult:

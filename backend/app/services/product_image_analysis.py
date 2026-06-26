@@ -186,7 +186,9 @@ def format_product_image_analysis(analysis: dict | None) -> str:
     colors = analysis.get("dominant_colors") or []
     color_text = "、".join(colors) if colors else "参考图原始色彩"
     lines = [
+        "抠图产品分析",
         f"主色：{color_text}",
+        f"主体尺寸约{analysis.get('subject_width', '?')}x{analysis.get('subject_height', '?')}px",
         f"产品在画面中占比约 {int(analysis.get('subject_coverage', 0) * 100)}%",
         f"宽高比约 {analysis.get('subject_aspect', '?')}",
     ]
@@ -194,28 +196,12 @@ def format_product_image_analysis(analysis: dict | None) -> str:
 
 
 def _dominant_colors(pixels: list, max_colors: int = 5) -> list[str]:
-    """Extract dominant color names from pixel data."""
+    """Extract dominant colors as hex values from pixel data."""
     if not pixels:
         return []
     from collections import Counter
-    # Simple: bucket into named colors
-    named = []
-    for r, g, b in pixels:
-        if r > 200 and g > 200 and b > 200:
-            named.append("白色")
-        elif r < 60 and g < 60 and b < 60:
-            named.append("黑色")
-        elif r < 80 and g < 80 and b > 120:
-            named.append("深蓝")
-        elif r > 150 and g < 80 and b < 80:
-            named.append("红色")
-        elif r > 150 and g > 120 and b < 80:
-            named.append("橙黄")
-        elif r < 80 and g > 120 and b < 80:
-            named.append("绿色")
-        elif r < 80 and g > 120 and b > 120:
-            named.append("青色")
-        else:
-            named.append("灰色")
-    counter = Counter(named)
-    return [color for color, _ in counter.most_common(max_colors)]
+    counter = Counter(pixels)
+    return [
+        f"#{r:02X}{g:02X}{b:02X}"
+        for (r, g, b), _ in counter.most_common(max_colors)
+    ]

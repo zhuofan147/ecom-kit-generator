@@ -5,15 +5,15 @@ import { resolve } from "node:path";
 const css = readFileSync(resolve(__dirname, "globals.css"), "utf8");
 
 describe("theme CSS", () => {
-  it("uses dark field and surface colors in the black theme", () => {
-    const blackTheme = css.match(/html\[data-theme="black"\]\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body ?? "";
+  it("uses dark field and surface colors in the dark theme", () => {
+    const darkTheme = css.match(/html\[data-theme="dark"\]\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
-    expect(blackTheme).toContain("--color-surface: #111827");
-    expect(blackTheme).toContain("--color-field: #0b1220");
+    expect(darkTheme).toContain("--color-surface: #1a1a1c");
+    expect(darkTheme).toContain("--color-field: #141416");
   });
 
   it("keeps white theme fields light", () => {
-    const whiteTheme = css.match(/html\[data-theme="white"\]\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body ?? "";
+    const whiteTheme = css.match(/html\[data-theme="white"\]\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
     expect(whiteTheme).toContain("--color-surface: #ffffff");
     expect(whiteTheme).toContain("--color-field: #ffffff");
@@ -26,7 +26,7 @@ describe("theme CSS", () => {
   });
 
   it("uses theme-aware selected card colors", () => {
-    expect(css).toContain("--color-selected-bg: #0f2638");
+    expect(css).toContain("--color-selected-bg: rgba(0, 117, 222, 0.14)");
     expect(css).toContain(".selected-card");
     expect(css).toContain("background-color: var(--color-selected-bg)");
   });

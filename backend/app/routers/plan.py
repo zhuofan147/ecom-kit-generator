@@ -26,9 +26,9 @@ async def create_plan(request: PlanRequest) -> ProductPlan:
         try:
             request.product_image_analysis = analyze_product_cutout(
                 resolve_masked_upload(request.product_id),
-                llm_api_url=os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
-                llm_api_key=os.environ.get("VISION_API_KEY", ""),
-                llm_model=os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
+                llm_api_url=request.vision_config.get("apiUrl") or os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
+                llm_api_key=request.vision_config.get("apiKey") or os.environ.get("VISION_API_KEY", ""),
+                llm_model=request.vision_config.get("model") or os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
             )
         except KeyError:
             pass

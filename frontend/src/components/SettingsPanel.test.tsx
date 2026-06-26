@@ -19,7 +19,7 @@ describe("SettingsPanel", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         open
-        theme="green"
+        theme="dark"
         llmConfigs={modelConfigs}
         imageConfigs={modelConfigs}
         selectedLlmConfigId="llm-default"
@@ -30,16 +30,19 @@ describe("SettingsPanel", () => {
         onAddImageConfig={vi.fn()}
         onUpdateLlmConfig={vi.fn()}
         onUpdateImageConfig={vi.fn()}
+        onRemoveLlmConfig={vi.fn()}
+        onRemoveImageConfig={vi.fn()}
+        onRemoveVisionConfig={vi.fn()}
         onSelectLlmConfig={vi.fn()}
         onSelectImageConfig={vi.fn()}
+        onSelectVisionConfig={vi.fn()}
       />
     );
 
     expect(markup).toContain("页面风格");
-    expect(markup).toContain("黑色");
-    expect(markup).toContain("蓝色");
-    expect(markup).toContain("绿色");
-    expect(markup).toContain("白色");
+    expect(markup).toContain("明亮");
+    expect(markup).toContain("暗黑");
+    expect(markup).toContain("纯白");
     expect(markup).toContain("大语言模型配置");
     expect(markup).toContain("生图模型配置");
     expect(markup).toContain('name="theme"');
@@ -49,7 +52,7 @@ describe("SettingsPanel", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         open={false}
-        theme="green"
+        theme="dark"
         llmConfigs={modelConfigs}
         imageConfigs={modelConfigs}
         selectedLlmConfigId="llm-default"
@@ -60,8 +63,12 @@ describe("SettingsPanel", () => {
         onAddImageConfig={vi.fn()}
         onUpdateLlmConfig={vi.fn()}
         onUpdateImageConfig={vi.fn()}
+        onRemoveLlmConfig={vi.fn()}
+        onRemoveImageConfig={vi.fn()}
+        onRemoveVisionConfig={vi.fn()}
         onSelectLlmConfig={vi.fn()}
         onSelectImageConfig={vi.fn()}
+        onSelectVisionConfig={vi.fn()}
       />
     );
 

@@ -2,15 +2,15 @@
 
 ecom-kit-generator
 
-Phase 1 developer demo: single product upload, `rembg` background removal, mock provider-based image generation, and one Taobao 800x800 white-background ecommerce image.
+Single product upload, `rembg` background removal, AI provider-based ecommerce kit generation, and multi-platform image sizing.
 
 ## Backend
 
 ```bash
 cd backend
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m venv .venv
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ## Frontend
@@ -26,7 +26,7 @@ Open `http://127.0.0.1:3000`.
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest
+cd backend && python -m pytest
 cd frontend && npm test
 cd frontend && npm run build
 ```
@@ -38,7 +38,7 @@ cd frontend && npm run build
 **启动 backend**（监听 0.0.0.0:8000）：
 
 ```bash
-HOST=0.0.0.0 python3 start_backend.py
+HOST=0.0.0.0 python start_backend.py
 ```
 
 **启动 frontend**（监听 0.0.0.0:3000，production build）：
@@ -52,14 +52,16 @@ npm run start:lan      # production server，绑 0.0.0.0:3000
 > ⚠️ **不要用 `npm run dev:lan`**。Next.js 16 Turbopack dev mode 有 RSC hydration bug，
 > 页面能加载但所有按钮点击无响应（React 不 hydrate）。必须用 production build。
 
-或者在项目根目录直接跑一键脚本 `start_lan.sh`，会同时拉起 backend + frontend 并打印 LAN IP。
+或者在项目根目录直接跑一键脚本：
+
+```bash
+python start_lan.py
+```
+
+macOS/Linux 也可以用 `./start_lan.sh`，Windows 可以双击或执行 `start_lan.bat`。脚本会同时拉起 backend + frontend 并打印 LAN IP。
 
 **手机访问**：在手机浏览器输入 `http://<电脑的 LAN IP>:3000`，例如 `http://192.168.1.10:3000`。frontend 内部已根据 `window.location.hostname` 拼出 backend 地址，手机无需改任何配置。
 
 **第一次启动会弹 macOS 防火墙提示**（"是否允许 python/Node 接受传入网络连接？"），点 **Allow** 即可。如果之前误点了拒绝，可以到 `系统设置 → 网络 → 防火墙` 里把对应程序删掉再重启。
 
-**查看本机 LAN IP**：
-
-```bash
-ifconfig | grep "inet " | grep -v 127.0.0.1
-```
+**查看本机 LAN IP**：`start_lan.py` 会自动打印可访问地址。

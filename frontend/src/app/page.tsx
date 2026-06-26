@@ -146,6 +146,7 @@ export default function Home() {
     setPlanning(true); setError(null);
     try {
       const selectedLlm = llmConfigs.find(c => c.id === selectedLlmConfigId);
+      const selectedVision = visionConfigs.find(c => c.id === selectedVisionConfigId);
       const nextPlan = await createProductPlan({
         productId: upload?.product_id,
         productInfo,
@@ -153,6 +154,7 @@ export default function Home() {
         kitTypes,
         kitSizes,
         llmConfig: selectedLlm ? { apiUrl: selectedLlm.apiUrl, apiKey: selectedLlm.apiKey, model: selectedLlm.model } : undefined,
+        visionConfig: selectedVision ? { apiUrl: selectedVision.apiUrl, apiKey: selectedVision.apiKey, model: selectedVision.model } : undefined,
       });
       setPlan(nextPlan);
       setKitTypes(nextPlan.image_plans.map((item) => item.kit_type));
@@ -185,6 +187,8 @@ export default function Home() {
         plannedPrompts,
         provider,
         llmConfig: (() => { const c = llmConfigs.find(c => c.id === selectedLlmConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
+        imageConfig: (() => { const c = imageConfigs.find(c => c.id === selectedImageConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
+        visionConfig: (() => { const c = visionConfigs.find(c => c.id === selectedVisionConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
       });
       setJob({
         id: created.job_id,

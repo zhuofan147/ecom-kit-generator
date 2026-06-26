@@ -31,7 +31,7 @@ class Job(BaseModel):
     reference_image_paths: list[Path] = Field(default_factory=list)
     platform: str = "taobao"
     product_info: dict = Field(default_factory=dict)
-    provider: str = "mock"
+    provider: str = "volcengine-ark"
     kit_types: list[str] = Field(default_factory=list)
     total_images: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

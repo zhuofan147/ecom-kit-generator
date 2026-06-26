@@ -37,6 +37,8 @@ class GenerateRequest(BaseModel):
     provider: str = "agnes"
     run_plan: bool = True  # Auto-run plan engine before generating
     llm_config: dict = Field(default_factory=dict)  # 前端设置栏配的 LLM API
+    image_config: dict = Field(default_factory=dict)  # 前端设置栏配的生图 API
+    vision_config: dict = Field(default_factory=dict)  # 前端设置栏配的识图 API
 
 
 @router.post("/generate/kit")
@@ -75,12 +77,13 @@ async def create_generation_job(request: GenerateRequest):
                 kit_sizes=request.kit_sizes,
                 product_image_analysis=analyze_product_cutout(
                     masked_path,
-                    llm_api_url=os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
-                    llm_api_key=os.environ.get("VISION_API_KEY", ""),
-                    llm_model=os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
+                    llm_api_url=request.vision_config.get("apiUrl") or os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
+                    llm_api_key=request.vision_config.get("apiKey") or os.environ.get("VISION_API_KEY", ""),
+                    llm_model=request.vision_config.get("model") or os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
                 ),
                 image_provider=request.provider,
                 llm_config=request.llm_config,
+                vision_config=request.vision_config,
             )
             plan = create_product_plan(plan_request)
             # Store AI prompts keyed by kit_type
@@ -102,6 +105,7 @@ async def create_generation_job(request: GenerateRequest):
         size_overrides=size_overrides,
         provider=request.provider,
         reference_image_paths=reference_paths,
+        image_api_key=request.image_config.get("apiKey", ""),
     )
     logger.info(
         "Generation job created: id=%s provider=%s kit_types=%s product_id=%s",

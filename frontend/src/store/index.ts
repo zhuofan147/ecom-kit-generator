@@ -67,7 +67,6 @@ const defaultImageConfigs: ModelConfig[] = [
   { id: "siliconflow-pro", name: "硅基流动 Flux Pro", apiUrl: `${DYNAMIC_API}/api/generate`, apiKey: "", model: "siliconflow-pro", enabled: true },
   { id: "agnes", name: "Agnes AI", apiUrl: `${DYNAMIC_API}/api/generate`, apiKey: "", model: "agnes", enabled: true },
   { id: "codex", name: "Codex Imagegen", apiUrl: `${DYNAMIC_API}/api/generate`, apiKey: "", model: "codex", enabled: true },
-  { id: "mock", name: "Mock 本地合成", apiUrl: `${DYNAMIC_API}/api/generate`, apiKey: "", model: "mock", enabled: true },
 ];
 
 function readPersistedSettings(): PersistedSettings {
@@ -161,6 +160,27 @@ function normalizeProductInfo(productInfo?: Partial<ProductInfo>): ProductInfo {
   return { ...defaultProductInfo(), ...(productInfo ?? {}) };
 }
 
+function isMockImageConfig(config: ModelConfig): boolean {
+  return config.id === "mock" || config.model === "mock";
+}
+
+function normalizeImageConfigs(configs?: ModelConfig[]): ModelConfig[] {
+  const next = (configs?.length ? configs : defaultImageConfigs).filter((config) => !isMockImageConfig(config));
+  return next.length ? next : defaultImageConfigs;
+}
+
+function normalizeImageConfigId(configs: ModelConfig[], selectedId?: string): string {
+  if (selectedId && configs.some((config) => config.id === selectedId)) return selectedId;
+  return configs[0]?.id ?? "volcengine-ark";
+}
+
+function normalizeProvider(configs: ModelConfig[], provider?: string): string {
+  if (provider && provider !== "mock" && configs.some((config) => config.model === provider || config.id === provider)) {
+    return provider;
+  }
+  return configs[0]?.model ?? "volcengine-ark";
+}
+
 function persistable(state: AppState) {
   return {
     theme: state.theme,
@@ -189,13 +209,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   platform: persistedDraft.platform ?? "taobao",
   kitTypes: persistedDraft.kitTypes?.length ? persistedDraft.kitTypes : ["main_white"],
   kitSizes: persistedDraft.kitSizes ?? {},
-  provider: persisted.provider ?? "volcengine-ark",
+  provider: normalizeProvider(normalizeImageConfigs(persisted.imageConfigs), persisted.provider),
   theme: (VALID_THEMES.includes(persisted.theme ?? "") ? persisted.theme : "light") as ThemeStyle,
   llmConfigs: persisted.llmConfigs?.length ? persisted.llmConfigs : defaultLlmConfigs,
-  imageConfigs: persisted.imageConfigs?.length ? persisted.imageConfigs : defaultImageConfigs,
+  imageConfigs: normalizeImageConfigs(persisted.imageConfigs),
   visionConfigs: persisted.visionConfigs?.length ? persisted.visionConfigs : defaultVisionConfigs,
   selectedLlmConfigId: persisted.selectedLlmConfigId ?? "llm-default",
-  selectedImageConfigId: persisted.selectedImageConfigId ?? "volcengine-ark",
+  selectedImageConfigId: normalizeImageConfigId(normalizeImageConfigs(persisted.imageConfigs), persisted.selectedImageConfigId),
   selectedVisionConfigId: persisted.selectedVisionConfigId ?? "vision-default",
 
   setUpload: (upload) =>
@@ -287,7 +307,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeImageConfig: (id) =>
     set((state) => {
       const configs = state.imageConfigs.filter((c) => c.id !== id);
-      const n = { imageConfigs: configs, selectedImageConfigId: state.selectedImageConfigId === id ? (configs[0]?.id ?? "mock") : state.selectedImageConfigId };
+      const n = { imageConfigs: configs, selectedImageConfigId: state.selectedImageConfigId === id ? (configs[0]?.id ?? "volcengine-ark") : state.selectedImageConfigId };
       writePersistedSettings({ ...persistable(state), ...n });
       return n;
     }),

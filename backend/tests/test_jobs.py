@@ -30,9 +30,11 @@ class BlockingProvider(ImageGenerationProvider):
 class CapturingProvider(ImageGenerationProvider):
     def __init__(self):
         self.reference_count = 0
+        self.api_key = ""
 
     async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         self.reference_count = len(request.reference_image_paths)
+        self.api_key = request.api_key
         Image.new("RGBA", (request.width, request.height), (40, 80, 120, 255)).save(request.output_path)
         return ImageGenerationResult(path=request.output_path, provider="capture", prompt=request.prompt)
 
@@ -42,6 +44,7 @@ def test_job_store_runs_generation_task_to_completion(tmp_path):
     Image.new("RGBA", (120, 120), (30, 160, 210, 255)).save(product_path)
 
     store = JobStore(output_dir=tmp_path)
+    store._provider = CapturingProvider()
     job = store.create_generation_job(
         product_id="product-1",
         masked_path=product_path,
@@ -84,13 +87,13 @@ def test_job_store_persists_completed_jobs_for_history(tmp_path):
     Image.new("RGBA", (120, 120), (30, 160, 210, 255)).save(product_path)
 
     store = JobStore(output_dir=tmp_path)
+    store._provider = CapturingProvider()
     job = store.create_generation_job(
         product_id="product-1",
         masked_path=product_path,
         platform="taobao",
         product_info={"name": "测试商品"},
         kit_types=["main_white"],
-        provider="mock",
     )
     asyncio.run(store.run_job(job.id))
 
@@ -109,6 +112,7 @@ def test_job_store_marks_interrupted_running_jobs_failed_on_restore(tmp_path):
     Image.new("RGBA", (120, 120), (30, 160, 210, 255)).save(product_path)
 
     store = JobStore(output_dir=tmp_path)
+    store._provider = CapturingProvider()
     job = store.create_generation_job(
         product_id="product-1",
         masked_path=product_path,
@@ -263,3 +267,24 @@ def test_job_store_passes_reference_images_to_provider(tmp_path):
     asyncio.run(store.run_job(job.id))
 
     assert provider.reference_count == 2
+
+
+def test_job_store_passes_image_api_key_to_provider(tmp_path):
+    product_path = tmp_path / "product.png"
+    Image.new("RGBA", (120, 120), (30, 160, 210, 255)).save(product_path)
+
+    provider = CapturingProvider()
+    store = JobStore(output_dir=tmp_path)
+    store._provider = provider
+    job = store.create_generation_job(
+        product_id="product-1",
+        masked_path=product_path,
+        platform="taobao",
+        product_info={"name": "测试商品"},
+        kit_types=["main_white"],
+        image_api_key="front-end-image-key",
+    )
+
+    asyncio.run(store.run_job(job.id))
+
+    assert provider.api_key == "front-end-image-key"

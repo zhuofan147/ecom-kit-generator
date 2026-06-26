@@ -10,6 +10,7 @@ describe("API payload builders", () => {
         name: "无线蓝牙耳机",
         category: "3C",
         material: "哑光黑",
+        dimensions: "",
         sellingPoints: "降噪\n长续航",
         price: "199",
         audience: "通勤上班族",
@@ -42,6 +43,7 @@ describe("API payload builders", () => {
         name: "无线蓝牙耳机",
         category: "3C",
         material: "哑光黑",
+        dimensions: "",
         sellingPoints: "降噪",
         price: "199",
         audience: "通勤上班族",
@@ -60,5 +62,45 @@ describe("API payload builders", () => {
     expect(payload.kit_types).toEqual(["main_white"]);
     expect(payload.kit_sizes.main_white).toEqual({ w: 1080, h: 1080 });
     expect(payload.product_info.planned_prompts.main_white).toBe("六段式提示词");
+  });
+
+  it("includes selected image and vision configs in generation payload", () => {
+    const payload = buildGenerationPayload({
+      productId: "product-1",
+      platform: "taobao",
+      productInfo: {
+        name: "无线蓝牙耳机",
+        category: "3C",
+        material: "哑光黑",
+        dimensions: "",
+        sellingPoints: "降噪",
+        price: "199",
+        audience: "通勤上班族",
+        usageScene: "地铁通勤",
+        competitorDiff: ""
+      },
+      kitTypes: ["main_white"],
+      imageConfig: {
+        apiUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        apiKey: "image-key",
+        model: "doubao-seedream-5-0-260128"
+      },
+      visionConfig: {
+        apiUrl: "https://api.siliconflow.cn",
+        apiKey: "vision-key",
+        model: "Qwen/Qwen3-VL-32B-Instruct"
+      }
+    });
+
+    expect(payload.image_config).toEqual({
+      apiUrl: "https://ark.cn-beijing.volces.com/api/v3",
+      apiKey: "image-key",
+      model: "doubao-seedream-5-0-260128"
+    });
+    expect(payload.vision_config).toEqual({
+      apiUrl: "https://api.siliconflow.cn",
+      apiKey: "vision-key",
+      model: "Qwen/Qwen3-VL-32B-Instruct"
+    });
   });
 });

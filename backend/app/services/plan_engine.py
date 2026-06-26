@@ -47,6 +47,7 @@ class PlanRequest(BaseModel):
     product_image_analysis: dict = Field(default_factory=dict)
     image_provider: str = "agnes"
     llm_config: dict = Field(default_factory=dict)  # 前端传来的 LLM API 配置
+    vision_config: dict = Field(default_factory=dict)  # 前端传来的识图 API 配置
 
 
 class ImagePlan(BaseModel):
@@ -102,6 +103,11 @@ def _get_plan_ai_client(llm_config: dict | None = None):
             llm_config.get("model", "deepseek-chat"),
         )
 
+    tokenplan_key = os.environ.get("TOKENPLAN_API_KEY") or os.environ.get("PLAN_AI_API_KEY", "")
+    tokenplan_base_url = os.environ.get("TOKENPLAN_BASE_URL") or os.environ.get("PLAN_AI_BASE_URL", "")
+    if tokenplan_key:
+        return tokenplan_key, tokenplan_base_url or "https://api.scnet.cn/api/llm/v1", "glm-5.2"
+
     # 2. 环境变量 DeepSeek
     ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if ds_key:
@@ -112,11 +118,6 @@ def _get_plan_ai_client(llm_config: dict | None = None):
     sf_key = os.environ.get("SILICONFLOW_KEY", "")
     if sf_key:
         return sf_key, "https://api.siliconflow.cn", "zai-org/GLM-5.2"
-
-    tokenplan_key = os.environ.get("TOKENPLAN_API_KEY") or os.environ.get("PLAN_AI_API_KEY", "")
-    tokenplan_base_url = os.environ.get("TOKENPLAN_BASE_URL") or os.environ.get("PLAN_AI_BASE_URL", "")
-    if tokenplan_key:
-        return tokenplan_key, tokenplan_base_url or "https://api.scnet.cn/api/llm/v1", "glm-5.2"
 
     return "", "https://api.deepseek.com", "deepseek-chat"
 
