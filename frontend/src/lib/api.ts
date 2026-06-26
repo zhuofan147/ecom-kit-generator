@@ -30,11 +30,12 @@ export async function createGenerationJob(input: {
   kitSizes?: KitSizeMap;
   plannedPrompts?: Partial<Record<KitType, string>>;
   provider?: string;
+  llmConfig?: { apiUrl: string; apiKey: string; model: string };
 }) {
   const response = await fetch(`${API_BASE_URL}/api/generate/kit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({...buildGenerationPayload(input), provider: input.provider || "agnes", run_plan: false})
+    body: JSON.stringify({...buildGenerationPayload(input), provider: input.provider || "agnes", run_plan: false, llm_config: input.llmConfig ? { apiUrl: input.llmConfig.apiUrl, apiKey: input.llmConfig.apiKey, model: input.llmConfig.model } : {}})
   });
   return parseResponse<{ job_id: string; status: string; total_images: number }>(response);
 }
@@ -45,11 +46,12 @@ export async function createProductPlan(input: {
   platform: Platform;
   kitTypes: KitType[];
   kitSizes?: KitSizeMap;
+  llmConfig?: { apiUrl: string; apiKey: string; model: string };
 }): Promise<ProductPlan> {
   const response = await fetch(`${API_BASE_URL}/api/plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildPlanPayload(input))
+    body: JSON.stringify({...buildPlanPayload(input), llm_config: input.llmConfig ? { apiUrl: input.llmConfig.apiUrl, apiKey: input.llmConfig.apiKey, model: input.llmConfig.model } : {}})
   });
   return parseResponse(response);
 }
@@ -72,6 +74,52 @@ export async function retryGeneratedImage(input: {
     method: "POST",
   });
   return parseResponse<{ job_id: string; status: string; kit_type: string }>(response);
+}
+
+export async function retouchImage(input: {
+  imageUrl: string;
+  prompt: string;
+  provider?: string;
+  width?: number;
+  height?: number;
+}): Promise<{ url: string; provider: string; prompt: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/images/retouch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_url: input.imageUrl,
+      prompt: input.prompt,
+      provider: input.provider || "agnes",
+      width: input.width || 1024,
+      height: input.height || 1024,
+    }),
+  });
+  return parseResponse(response);
+}
+
+export async function testLlmConnection(config: {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+}): Promise<{ success: boolean; latency_ms?: number; response?: string; error?: string }> {
+  const resp = await fetch(`${API_BASE_URL}/api/test-llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_url: config.apiUrl, api_key: config.apiKey, model: config.model }),
+  });
+  return parseResponse(resp);
+}
+
+export async function listModels(config: {
+  apiUrl: string;
+  apiKey: string;
+}): Promise<{ models: string[]; error?: string }> {
+  const resp = await fetch(`${API_BASE_URL}/api/list-models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_url: config.apiUrl, api_key: config.apiKey, model: "" }),
+  });
+  return parseResponse(resp);
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

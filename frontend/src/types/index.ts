@@ -182,7 +182,7 @@ export type ProviderInfo = {
   is_default: boolean;
 };
 
-export type ThemeStyle = "black" | "blue" | "green" | "white";
+export type ThemeStyle = "light" | "dark" | "white";
 
 export type ModelConfig = {
   id: string;
@@ -191,4 +191,5 @@ export type ModelConfig = {
   apiKey: string;
   model: string;
   enabled: boolean;
+  availableModels?: string[];  // 从 /v1/models 获取的模型列表
 };

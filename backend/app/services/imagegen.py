@@ -676,15 +676,17 @@ class AgnesProvider(ImageGenerationProvider):
         payload: dict = {
             "model": self.model_id,
             "prompt": request.prompt,
-            "n": 1,
             "size": f"{request.width}x{request.height}",
+            "extra_body": {
+                "response_format": "url"
+            }
         }
 
-        # Agnes img2img: pass image as URL or base64 data URL
+        # Agnes img2img: image must be in extra_body.image array (per 2.1-flash docs)
         if request.product_image_path.exists():
             with open(request.product_image_path, "rb") as f:
                 image_b64 = base64.b64encode(f.read()).decode()
-            payload["image"] = f"data:image/png;base64,{image_b64}"
+            payload["extra_body"]["image"] = [f"data:image/png;base64,{image_b64}"]
 
         # Write payload to temp file (curl -d @file avoids shell escaping issues)
         import tempfile

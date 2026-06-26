@@ -27,7 +27,7 @@ import os
 import time
 from enum import Enum
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ class PlanRequest(BaseModel):
     kit_sizes: dict[str, dict[str, int]] = Field(default_factory=dict)
     product_image_analysis: dict = Field(default_factory=dict)
     image_provider: str = "agnes"
+    llm_config: dict = Field(default_factory=dict)  # 前端传来的 LLM API 配置
 
 
 class ImagePlan(BaseModel):
@@ -89,19 +90,35 @@ def _get_plan_engine_mode() -> PlanEngineMode:
     return PlanEngineMode.AI
 
 
-def _get_plan_ai_client():
-    """Get AI client for OpenAI-compatible plan generation."""
+def _get_plan_ai_client(llm_config: dict | None = None):
+    """Get AI client for OpenAI-compatible plan generation.
+    优先用前端传来的 llm_config，其次 DeepSeek（稳定），SiliconFlow 备选。
+    """
+    # 1. 前端传来的配置（设置栏里配的 LLM API）
+    if llm_config and llm_config.get("apiKey"):
+        return (
+            llm_config["apiKey"],
+            llm_config.get("apiUrl", "https://api.deepseek.com"),
+            llm_config.get("model", "deepseek-chat"),
+        )
+
+    # 2. 环境变量 DeepSeek
+    ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if ds_key:
+        ds_base = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        return ds_key, ds_base, "deepseek-chat"
+
+    # 3. 环境变量 SiliconFlow
+    sf_key = os.environ.get("SILICONFLOW_KEY", "")
+    if sf_key:
+        return sf_key, "https://api.siliconflow.cn", "zai-org/GLM-5.2"
+
     tokenplan_key = os.environ.get("TOKENPLAN_API_KEY") or os.environ.get("PLAN_AI_API_KEY", "")
     tokenplan_base_url = os.environ.get("TOKENPLAN_BASE_URL") or os.environ.get("PLAN_AI_BASE_URL", "")
     if tokenplan_key:
         return tokenplan_key, tokenplan_base_url or "https://api.scnet.cn/api/llm/v1", "glm-5.2"
 
-    sf_key = os.environ.get("SILICONFLOW_KEY", "")
-    if sf_key:
-        return sf_key, "https://api.siliconflow.cn", "zai-org/GLM-5.2"
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    return api_key, base_url, "deepseek-chat"
+    return "", "https://api.deepseek.com", "deepseek-chat"
 
 
 def _build_chat_completions_url(base_url: str) -> str:
@@ -319,11 +336,15 @@ def refine_selling_points(request: PlanRequest, category: str) -> list[str]:
     while len(refined) < 5:
         refined.append(defaults[len(refined)])
 
-    return [truncate_text(point, 18) for point in refined[:5]]
+    return [truncate_text(point, 80) for point in refined[:5]]
 
 
 def split_points(text: str) -> list[str]:
-    parts = re.split(r"[\n,，;；、]+", text or "")
+    """只按换行分行，不按逗号/顿号/分号拆——每行是一个完整卖点。
+    逗号/顿号在卖点内部是正常用法（如"大底、AI三摄、长焦"），不应拆开。
+    如果需要智能拆分，应由 AI 模式处理，不是规则硬拆。
+    """
+    parts = re.split(r"[\n\r]+", text or "")
     return [part.strip() for part in parts if part.strip()]
 
 
@@ -636,7 +657,7 @@ def _create_product_plan_rule(request: PlanRequest) -> ProductPlan:
 
 def create_product_plan_ai(request: PlanRequest) -> ProductPlan:
     """AI-powered plan generation using SiliconFlow GLM-5.2 or DeepSeek."""
-    api_key, base_url, default_model = _get_plan_ai_client()
+    api_key, base_url, default_model = _get_plan_ai_client(getattr(request, "llm_config", None))
     if not api_key:
         logger.warning("No AI API key configured, falling back to rule mode")
         return _create_product_plan_rule(request)
@@ -649,7 +670,7 @@ def create_product_plan_ai(request: PlanRequest) -> ProductPlan:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.7,
-        "max_tokens": 2000,
+        "max_tokens": 4096,
         "response_format": {"type": "json_object"},
     }
 
@@ -665,6 +686,9 @@ def create_product_plan_ai(request: PlanRequest) -> ProductPlan:
     try:
         with urlopen(req, timeout=30, context=ssl_context()) as resp:
             data = json.loads(resp.read())
+    except HTTPError as e:
+        body = e.read().decode(errors="replace")[:800]
+        raise RuntimeError(f"AI API call failed ({e.code}): {body}")
     except URLError as e:
         raise RuntimeError(f"AI API call failed: {e}")
 
@@ -720,14 +744,52 @@ def _parse_ai_response(text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Try to extract JSON from the text
-        match = re.search(r"\{[^{}]*\}(?:\s*[,\n]\s*\{[^{}]*\})*", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        raise ValueError(f"Failed to parse AI response as JSON: {text[:300]}")
+        pass
+
+    # Try to extract JSON from the text
+    match = re.search(r"\{[^{}]*\}(?:\s*[,\n]\s*\{[^{}]*\})*", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # If still failing, try to repair truncated JSON (max_tokens cut-off)
+    # Strategy: add missing closing brackets/braces/commas
+    repaired = _repair_truncated_json(text)
+    if repaired:
+        return repaired
+
+    raise ValueError(f"Failed to parse AI response as JSON: {text[:300]}")
+
+
+def _repair_truncated_json(text: str) -> dict | None:
+    """Try to repair a truncated JSON by completing the last incomplete object."""
+    stripped = text.strip()
+    # Try progressively removing characters from the end until valid JSON emerges
+    for cut in range(len(stripped), max(len(stripped) - 500, 0), -1):
+        candidate = stripped[:cut].rstrip(", \t\n\r")
+        # Count braces/brackets
+        open_braces = candidate.count("{") - candidate.count("}")
+        open_brackets = candidate.count("[") - candidate.count("]")
+        # Close any unclosed strings
+        in_string = False
+        clean = []
+        for ch in candidate:
+            if ch == '"' and (not clean or clean[-1] != '\\'):
+                in_string = not in_string
+            clean.append(ch)
+        candidate = "".join(clean)
+        # If we cut mid-string, it won't parse — skip and try shorter
+        if in_string:
+            continue
+        # Add missing closing brackets
+        candidate += "]" * open_brackets + "}" * open_braces
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 def _build_product_plan_from_ai(ai_result: dict, request: PlanRequest) -> ProductPlan:

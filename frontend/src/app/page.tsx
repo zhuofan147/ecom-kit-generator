@@ -34,9 +34,12 @@ export default function Home() {
   const {
     upload, job, productInfo, platform, kitTypes, kitSizes, provider, theme,
     llmConfigs, imageConfigs, selectedLlmConfigId, selectedImageConfigId,
+    visionConfigs, selectedVisionConfigId,
     setUpload, setJob, setProductInfo, setPlatform, setKitTypes, toggleKitType, setProvider,
-    setKitSize, setTheme, addLlmConfig, addImageConfig, updateLlmConfig, updateImageConfig,
-    selectLlmConfig, selectImageConfig, clearDraft
+    setKitSize, setTheme, addLlmConfig, addImageConfig, addVisionConfig,
+    updateLlmConfig, updateImageConfig, updateVisionConfig,
+    removeLlmConfig, removeImageConfig, removeVisionConfig,
+    selectLlmConfig, selectImageConfig, selectVisionConfig, clearDraft
   } = useAppStore();
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -142,12 +145,14 @@ export default function Home() {
   const createPlan = async () => {
     setPlanning(true); setError(null);
     try {
+      const selectedLlm = llmConfigs.find(c => c.id === selectedLlmConfigId);
       const nextPlan = await createProductPlan({
         productId: upload?.product_id,
         productInfo,
         platform,
         kitTypes,
         kitSizes,
+        llmConfig: selectedLlm ? { apiUrl: selectedLlm.apiUrl, apiKey: selectedLlm.apiKey, model: selectedLlm.model } : undefined,
       });
       setPlan(nextPlan);
       setKitTypes(nextPlan.image_plans.map((item) => item.kit_type));
@@ -179,6 +184,7 @@ export default function Home() {
         kitSizes,
         plannedPrompts,
         provider,
+        llmConfig: (() => { const c = llmConfigs.find(c => c.id === selectedLlmConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
       });
       setJob({
         id: created.job_id,
@@ -293,6 +299,14 @@ export default function Home() {
         onUpdateImageConfig={updateImageConfig}
         onSelectLlmConfig={selectLlmConfig}
         onSelectImageConfig={selectImageConfig}
+        onRemoveLlmConfig={removeLlmConfig}
+        onRemoveImageConfig={removeImageConfig}
+        onRemoveVisionConfig={removeVisionConfig}
+        visionConfigs={visionConfigs}
+        selectedVisionConfigId={selectedVisionConfigId}
+        onAddVisionConfig={addVisionConfig}
+        onUpdateVisionConfig={updateVisionConfig}
+        onSelectVisionConfig={selectVisionConfig}
       />
 
       {error && (
@@ -495,6 +509,7 @@ export default function Home() {
           url: assetUrl(r.url),
           label: r.label,
           kit_type: r.kit_type,
+          prompt: r.prompt,
         }))}
         currentIndex={Math.max(0, previewIndex)}
         onIndexChange={setPreviewIndex}

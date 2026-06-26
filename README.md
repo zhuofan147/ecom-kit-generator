@@ -41,12 +41,16 @@ cd frontend && npm run build
 HOST=0.0.0.0 python3 start_backend.py
 ```
 
-**启动 frontend**（监听 0.0.0.0:3000）：
+**启动 frontend**（监听 0.0.0.0:3000，production build）：
 
 ```bash
 cd frontend
-npm run dev:lan
+npm run build          # 首次或改代码后需要 build
+npm run start:lan      # production server，绑 0.0.0.0:3000
 ```
+
+> ⚠️ **不要用 `npm run dev:lan`**。Next.js 16 Turbopack dev mode 有 RSC hydration bug，
+> 页面能加载但所有按钮点击无响应（React 不 hydrate）。必须用 production build。
 
 或者在项目根目录直接跑一键脚本 `start_lan.sh`，会同时拉起 backend + frontend 并打印 LAN IP。
 

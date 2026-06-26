@@ -20,7 +20,7 @@ if not ag_key:
 
 # 透传所有 provider key 到子进程
 forward_env = os.environ.copy()
-for env_name in ("AGNES_API_KEY", "VOLCENGINE_ARK_API_KEY", "FAL_KEY", "SILICONFLOW_KEY"):
+for env_name in ("AGNES_API_KEY", "VOLCENGINE_ARK_API_KEY", "FAL_KEY", "SILICONFLOW_KEY", "VISION_API_KEY", "VISION_BASE_URL", "VISION_MODEL"):
     val = os.environ.get(env_name)
     if val:
         forward_env[env_name] = val

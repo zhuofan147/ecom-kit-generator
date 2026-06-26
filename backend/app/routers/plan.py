@@ -1,5 +1,7 @@
 """Product planning API."""
 
+import os
+
 from fastapi import APIRouter
 
 from app.routers.upload import resolve_masked_upload
@@ -10,16 +12,23 @@ from app.services.plan_engine import (
     create_product_plan,
     get_available_templates,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["plan"])
 
 
 @router.post("/plan", response_model=ProductPlan)
 async def create_plan(request: PlanRequest) -> ProductPlan:
+    print(f"PLAN_DEBUG: product_id='{request.product_id}', has_analysis={bool(request.product_image_analysis)}", flush=True)
     if request.product_id and not request.product_image_analysis:
         try:
             request.product_image_analysis = analyze_product_cutout(
-                resolve_masked_upload(request.product_id)
+                resolve_masked_upload(request.product_id),
+                llm_api_url=os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
+                llm_api_key=os.environ.get("VISION_API_KEY", ""),
+                llm_model=os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
             )
         except KeyError:
             pass

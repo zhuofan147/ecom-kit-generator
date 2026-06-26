@@ -2,12 +2,17 @@
 
 import asyncio
 import logging
+import os
+import uuid
+from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.config import GENERATED_DIR
+from app.config import GENERATED_DIR, OUTPUT_DIR, RETOUCHED_DIR
 from app.routers.upload import resolve_masked_upload, resolve_reference_uploads
+from app.services.imagegen import ImageGenerationRequest, create_provider
 from app.services.jobs import JobStore
 from app.services.plan_engine import PlanRequest, create_product_plan
 from app.services.product_image_analysis import analyze_product_cutout
@@ -31,6 +36,7 @@ class GenerateRequest(BaseModel):
     kit_sizes: dict[str, dict[str, int]] = Field(default_factory=dict)
     provider: str = "agnes"
     run_plan: bool = True  # Auto-run plan engine before generating
+    llm_config: dict = Field(default_factory=dict)  # 前端设置栏配的 LLM API
 
 
 @router.post("/generate/kit")
@@ -67,8 +73,14 @@ async def create_generation_job(request: GenerateRequest):
                 platform=request.platform,
                 kit_types=request.kit_types,
                 kit_sizes=request.kit_sizes,
-                product_image_analysis=analyze_product_cutout(masked_path),
+                product_image_analysis=analyze_product_cutout(
+                    masked_path,
+                    llm_api_url=os.environ.get("VISION_BASE_URL", "https://api.scnet.cn/api/llm/v1"),
+                    llm_api_key=os.environ.get("VISION_API_KEY", ""),
+                    llm_model=os.environ.get("VISION_MODEL", "Qwen3.6-Plus"),
+                ),
                 image_provider=request.provider,
+                llm_config=request.llm_config,
             )
             plan = create_product_plan(plan_request)
             # Store AI prompts keyed by kit_type
@@ -130,3 +142,52 @@ async def retry_generated_image(job_id: str, kit_type: str):
 
     asyncio.create_task(job_store.retry_kit_type(job_id, kit_type))
     return {"job_id": job_id, "status": "running", "kit_type": kit_type}
+
+class RetouchRequest(BaseModel):
+    """图生图编辑：基于当前生成图 + 新提示词 重新生成"""
+    image_url: str
+    prompt: str
+    provider: str = "agnes"
+    width: int = 1024
+    height: int = 1024
+
+
+@router.post("/images/retouch")
+async def retouch_image(request: RetouchRequest):
+    """以当前图为参考 + 新prompt 做图生图重新生成"""
+
+    parsed = urlparse(request.image_url)
+    url_path = parsed.path
+
+    if url_path.startswith("/outputs/"):
+        rel_path = url_path[len("/outputs/"):]
+        local_image_path = OUTPUT_DIR / rel_path
+    else:
+        local_image_path = Path(url_path)
+
+    if not local_image_path.exists():
+        raise HTTPException(status_code=404, detail=f"找不到图片: {local_image_path}")
+
+    provider = create_provider(request.provider)
+    RETOUCHED_DIR.mkdir(parents=True, exist_ok=True)
+    out_name = f"retouched_{uuid.uuid4().hex[:8]}.png"
+    output_path = RETOUCHED_DIR / out_name
+
+    gen_request = ImageGenerationRequest(
+        product_image_path=local_image_path,
+        output_path=output_path,
+        prompt=request.prompt,
+        width=request.width,
+        height=request.height,
+    )
+
+    try:
+        result = await provider.generate_image(gen_request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+
+    return {
+        "url": f"/outputs/retouched/{out_name}",
+        "provider": result.provider,
+        "prompt": result.prompt,
+    }
