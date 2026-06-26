@@ -10,70 +10,93 @@ To add a new provider:
 """
 
 import os
-import shutil
 from dataclasses import dataclass, field
 from typing import Callable
 
 
 @dataclass
 class ProviderMeta:
-    name: str          # unique key e.g. "mock", "fal-fast", "codex"
+    name: str          # unique key e.g. "fal-fast", "agnes"
     label: str         # display name e.g. "Fal.ai Flux Schnell"
     description: str   # one-liner
     env_vars: list[str] = field(default_factory=list)  # required env vars
+    endpoint: str = ""     # API endpoint URL
+    model_id: str = ""     # model identifier for the provider
+    provider_class: str = ""  # class in imagegen.py, e.g. "AgnesProvider"
     is_available: bool = False
     is_default: bool = False
 
 
+_PROVIDER_ENDPOINTS = {
+    "siliconflow": "https://api.siliconflow.cn/v1/images/generations",
+    "fal": "https://fal.run",
+    "agnes": "https://apihub.agnes-ai.com/v1/images/generations",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+}
+
 PROVIDER_REGISTRY: list[ProviderMeta] = [
-    ProviderMeta(
-        name="mock",
-        label="Mock 本地合成",
-        description="纯本地 Pillow 合成，无 AI，快速预览布局效果",
-        env_vars=[],
-        is_default=True,
-    ),
     ProviderMeta(
         name="fal-fast",
         label="Fal.ai Flux Schnell (快)",
         description="fal.ai flux/schnell 模型，~2s/张，适合批量生成",
         env_vars=["FAL_KEY"],
+        endpoint=f"{_PROVIDER_ENDPOINTS['fal']}/fal-ai/flux/schnell",
+        model_id="fal-ai/flux/schnell",
+        provider_class="FalAiProvider",
     ),
     ProviderMeta(
         name="fal-pro",
         label="Fal.ai Flux Pro (精)",
         description="fal.ai flux/pro 模型，~8s/张，高质量电商图",
         env_vars=["FAL_KEY"],
-    ),
-    ProviderMeta(
-        name="codex",
-        label="Codex Imagegen",
-        description="OpenAI Codex 内置 imagegen，高质量，需 Codex CLI",
-        env_vars=[],
+        endpoint=f"{_PROVIDER_ENDPOINTS['fal']}/fal-ai/flux-pro/v1.1-ultra",
+        model_id="fal-ai/flux-pro/v1.1-ultra",
+        provider_class="FalAiProvider",
     ),
     ProviderMeta(
         name="siliconflow-fast",
         label="硅基流动 Flux Schnell (快)",
         description="国内硅基流动 Flux Schnell，~2s/张，不超时",
         env_vars=["SILICONFLOW_KEY"],
+        endpoint=_PROVIDER_ENDPOINTS["siliconflow"],
+        model_id="black-forest-labs/FLUX.1-schnell",
+        provider_class="SiliconFlowProvider",
     ),
     ProviderMeta(
         name="siliconflow-pro",
         label="硅基流动 Flux Pro (精)",
         description="国内硅基流动 Flux Pro，~8s/张，高质感",
         env_vars=["SILICONFLOW_KEY"],
+        endpoint=_PROVIDER_ENDPOINTS["siliconflow"],
+        model_id="black-forest-labs/FLUX.1-pro",
+        provider_class="SiliconFlowProvider",
     ),
     ProviderMeta(
         name="agnes",
         label="Agnes AI (免费)",
         description="新加坡 Sapiens AI 全模态免费 API，图生图/文生图，速度快",
         env_vars=["AGNES_API_KEY"],
+        endpoint=_PROVIDER_ENDPOINTS["agnes"],
+        model_id="agnes-image-2.1-flash",
+        provider_class="AgnesProvider",
     ),
     ProviderMeta(
         name="volcengine-ark",
         label="火山方舟 Seedream 5.0",
         description="火山方舟豆包 Seedream 5.0，真图生图，产品一致性最佳",
         env_vars=["VOLCENGINE_ARK_API_KEY"],
+        endpoint=_PROVIDER_ENDPOINTS["volcengine"],
+        model_id="doubao-seedream-5-0-260128",
+        provider_class="VolcEngineArkProvider",
+    ),
+    ProviderMeta(
+        name="codex",
+        label="Codex CLI (本地)",
+        description="OpenAI Codex CLI imagegen skill，无需 API key",
+        env_vars=[],
+        endpoint="",
+        model_id="",
+        provider_class="CodexImagegenProvider",
     ),
 ]
 
@@ -87,10 +110,6 @@ def detect_availability() -> dict[str, bool]:
             if not os.environ.get(var):
                 ok = False
                 break
-        # codex needs the CLI binary
-        if meta.name == "codex":
-            if not shutil.which("codex"):
-                ok = False
         available[meta.name] = ok
     return available
 
@@ -111,11 +130,10 @@ def get_provider_list() -> list[dict]:
 
 
 def get_default_provider() -> str:
-    """Pick the best available provider, falling back to mock."""
+    """Pick the best available provider based on env vars."""
     avail = detect_availability()
     for meta in PROVIDER_REGISTRY:
-        if meta.is_default:
-            continue
         if avail.get(meta.name):
             return meta.name
-    return "mock"
+    # No provider has API key configured — return empty, caller decides fallback
+    return ""

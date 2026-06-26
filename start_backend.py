@@ -18,6 +18,25 @@ ag_key = os.environ.get("AGNES_API_KEY", "")
 if not ag_key:
     print("WARN: AGNES_API_KEY not set — agnes provider will fail (others OK)", file=sys.stderr)
 
+# ── 启动时打印各 provider 可用状态 ──────────────────────────────
+print()
+sys.path.insert(0, str(Path("backend")))
+from app.config.providers import PROVIDER_REGISTRY, detect_availability
+
+print("━" * 48)
+print(f"{'Provider':24s} {'ENV Variable':24s} {'Status'}")
+print("━" * 48)
+avail = detect_availability()
+for meta in PROVIDER_REGISTRY:
+    available = avail.get(meta.name, False)
+    icon = "✅" if available else "❌"
+    envs = ",".join(meta.env_vars) if meta.env_vars else "(none)"
+    status = "AVAILABLE" if available else "NOT SET"
+    print(f"{icon} {meta.label:22s} {envs:24s} {status}")
+print("━" * 48)
+print(f"  Placeholder 'mock' always available (solid-colour fallback)")
+print()
+
 # 透传所有 provider key 到子进程
 forward_env = os.environ.copy()
 for env_name in ("AGNES_API_KEY", "VOLCENGINE_ARK_API_KEY", "FAL_KEY", "SILICONFLOW_KEY", "VISION_API_KEY", "VISION_BASE_URL", "VISION_MODEL"):
