@@ -40,6 +40,36 @@ class ImageGenerationProvider:
         raise NotImplementedError("Inpainting is reserved for Phase 2.")
 
 
+def extract_image_url(data: dict) -> str:
+    images = data.get("data", [])
+    if not images:
+        return ""
+    return _extract_url_value(images[0])
+
+
+def _extract_url_value(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        for item in value:
+            nested = _extract_url_value(item)
+            if nested:
+                return nested
+        return ""
+    if not isinstance(value, dict):
+        return ""
+    for key in ("url", "image_url", "output_url", "result", "images"):
+        nested = _extract_url_value(value.get(key))
+        if nested:
+            return nested
+    data = value.get("data")
+    if isinstance(data, list) and data:
+        return _extract_url_value(data[0])
+    if isinstance(data, dict):
+        return _extract_url_value(data)
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Real AI Providers
 # ═══════════════════════════════════════════════════════════════
@@ -52,167 +82,6 @@ import subprocess
 import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-
-
-class SiliconFlowProvider(ImageGenerationProvider):
-    """国内硅基流动 SiliconFlow — OpenAI兼容API，Flux Schnell/Pro 生图。
-    
-    需要 SILICONFLOW_KEY 环境变量。注册：https://siliconflow.cn
-    API 文档：https://docs.siliconflow.cn/api-reference/images/generations
-    """
-
-    def __init__(self, model: str = "fast", endpoint: str = "", model_id: str = ""):
-        self.model = model
-        self.api_key = os.environ.get("SILICONFLOW_KEY", "")
-        if model == "fast":
-            self.provider_name = "siliconflow-fast"
-            self.model_id = model_id or "Tongyi-MAI/Z-Image-Turbo"
-        else:
-            self.provider_name = "siliconflow-pro"
-            self.model_id = model_id or "Tongyi-MAI/Z-Image"
-        self.endpoint = endpoint or "https://api.siliconflow.cn/v1/images/generations"
-
-    async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        api_key = request.api_key or self.api_key
-        if not api_key:
-            raise RuntimeError("SILICONFLOW_KEY environment variable not set. Register at siliconflow.cn")
-
-        request.output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Encode product image as base64 for img2img reference
-        with open(request.product_image_path, "rb") as f:
-            image_b64 = base64.b64encode(f.read()).decode()
-
-        size = f"{request.width}x{request.height}"
-        payload = {
-            "model": self.model_id,
-            "prompt": request.prompt,
-            "image": image_b64,
-            "n": 1,
-            "size": size,
-        }
-
-        req = Request(self.endpoint, data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
-
-        try:
-            with urlopen(req, timeout=120, context=ssl_context()) as resp:
-                data = json.loads(resp.read())
-        except URLError as e:
-            raise RuntimeError(f"SiliconFlow request failed: {e}")
-
-        images = data.get("images") or data.get("data", [])
-        if not images:
-            raise RuntimeError(f"SiliconFlow returned no images: {data}")
-
-        image_url = images[0].get("url") or images[0].get("b64_json")
-        if not image_url:
-            raise RuntimeError(f"SiliconFlow no URL/b64: {data}")
-
-        try:
-            if image_url.startswith("data:"):
-                request.output_path.write_bytes(base64.b64decode(image_url.split(",", 1)[1]))
-            else:
-                img_req = Request(image_url)
-                with urlopen(img_req, timeout=60, context=ssl_context()) as r:
-                    request.output_path.write_bytes(r.read())
-        except URLError as e:
-            raise RuntimeError(f"Failed to download image: {e}")
-
-        return ImageGenerationResult(
-            path=request.output_path, provider=self.provider_name, prompt=request.prompt)
-
-
-class FalAiProvider(ImageGenerationProvider):
-    """fal.ai REST API provider — supports flux/schnell and flux/pro."""
-
-    def __init__(self, model: str = "fast", endpoint: str = ""):
-        self.model = model
-        self.api_key = os.environ.get("FAL_KEY", "")
-        if model == "fast":
-            self.provider_name = "fal-fast"
-            self.endpoint = endpoint or "https://fal.run/fal-ai/flux/schnell"
-        else:
-            self.provider_name = "fal-pro"
-            self.endpoint = endpoint or "https://fal.run/fal-ai/flux-pro/v1.1-ultra"
-
-    async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        api_key = request.api_key or self.api_key
-        if not api_key:
-            raise RuntimeError("FAL_KEY environment variable not set")
-
-        request.output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Prepare payload
-        payload = {
-            "prompt": request.prompt,
-            "image_size": "square_hd" if request.width == request.height else "landscape_4_3",
-            "num_images": 1,
-            "enable_safety_checker": False,
-        }
-
-        # If product image exists, use img2img endpoint
-        if request.product_image_path.exists():
-            with open(request.product_image_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode()
-            payload["image_url"] = f"data:image/png;base64,{img_b64}"
-            payload["strength"] = 0.65  # preserve product shape
-            # Switch to img2img endpoint
-            if self.model == "fast":
-                self.endpoint = "https://fal.run/fal-ai/flux/schnell/image-to-image"
-
-        req = Request(
-            self.endpoint,
-            data=json.dumps(payload).encode(),
-            headers={
-                "Authorization": f"Key {api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-
-        # Submit
-        try:
-            with urlopen(req, timeout=30, context=ssl_context()) as resp:
-                submit_data = json.loads(resp.read())
-        except URLError as e:
-            raise RuntimeError(f"fal.ai request failed: {e}")
-
-        # Poll for result (fal.ai returns a request_id for async)
-        request_id = submit_data.get("request_id", "")
-        result_url = None
-        for _ in range(30):
-            time.sleep(2)
-            status_req = Request(
-                f"https://fal.run/{request_id}/status" if request_id else self.endpoint + "/status",
-                headers={"Authorization": f"Key {api_key}"},
-            )
-            try:
-                with urlopen(status_req, timeout=10, context=ssl_context()) as resp:
-                    data = json.loads(resp.read())
-                if data.get("status") == "COMPLETED":
-                    images = data.get("images") or data.get("output", {}).get("images", [])
-                    if images:
-                        result_url = images[0].get("url") or images[0]
-                    break
-            except Exception:
-                continue
-
-        if not result_url:
-            raise RuntimeError("fal.ai generation timed out")
-
-        # Download the result
-        try:
-            img_req = Request(result_url)
-            with urlopen(img_req, timeout=30, context=ssl_context()) as resp:
-                request.output_path.write_bytes(resp.read())
-        except URLError as e:
-            raise RuntimeError(f"Failed to download fal.ai image: {e}")
-
-        return ImageGenerationResult(
-            path=request.output_path,
-            provider=self.provider_name,
-            prompt=request.prompt,
-        )
 
 
 class CodexImagegenProvider(ImageGenerationProvider):
@@ -280,12 +149,78 @@ class AgnesProvider(ImageGenerationProvider):
     API: POST https://apihub.agnes-ai.com/v1/images/generations
     """
 
-    provider_name = "agnes"
-
-    def __init__(self, endpoint: str = "", model_id: str = ""):
+    def __init__(self, name: str = "agnes", endpoint: str = "", model_id: str = ""):
+        self.provider_name = name
         self.api_key = os.environ.get("AGNES_API_KEY", "")
         self.endpoint = endpoint or "https://apihub.agnes-ai.com/v1/images/generations"
         self.model_id = model_id or "agnes-image-2.1-flash"
+
+    async def _poll_async_task(self, task_id: str, api_key: str, timeout: int = 600, interval: int = 3) -> str:
+        """Poll an async token商 task until complete, return the image URL."""
+        # Derive task query URL from the generation endpoint
+        # e.g. https://api.xxx.com/v1/images/generations → https://api.xxx.com/v1/tasks/{task_id}
+        base = self.endpoint.rsplit("/v1/images/generations", 1)[0]
+        task_url = f"{base}/v1/tasks/{task_id}"
+
+        import time, logging
+        _log = logging.getLogger("agnes_poll")
+        deadline = time.time() + timeout
+        first = True
+        while time.time() < deadline:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", task_url,
+                "-H", f"Authorization: Bearer {api_key}",
+                "--connect-timeout", "10", "--max-time", "15",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+            raw = stdout.decode().strip()
+            if first:
+                # write to /tmp so Hermes can read back
+                import os as _os
+                _log_path = "/tmp/ecom-poll-debug.log"
+                with open(_log_path, "a") as _f:
+                    _f.write(f"[{self.provider_name}] task_url={task_url}\n")
+                    _f.write(f"[{self.provider_name}] exit={proc.returncode} raw={raw[:300]}\n")
+                print(f"[POLL_DEBUG] log written to {_log_path}", flush=True)
+                _log.info(f"[POLL] task_url={task_url}")
+                _log.info(f"[POLL] curl exit={proc.returncode} stderr={stderr.decode()[:200]}")
+                _log.info(f"[POLL] raw response={raw[:500]}")
+                first = False
+            if proc.returncode != 0:
+                await asyncio.sleep(interval)
+                continue
+
+            try:
+                result = json.loads(stdout.decode())
+            except json.JSONDecodeError:
+                _log.warning(f"[POLL] JSON decode failed: {raw[:300]}")
+                await asyncio.sleep(interval)
+                continue
+
+            # Try multiple response shapes
+            item = result
+            if isinstance(result.get("data"), list):
+                item = result["data"][0] if result["data"] else {}
+            elif isinstance(result.get("data"), dict):
+                item = result["data"]
+            status = item.get("status", "") or item.get("task_status", "") or item.get("state", "")
+            _log.info(f"[POLL] status={status} keys={list(item.keys())[:10]}")
+            if status in ("succeeded", "completed", "done", "success", "ready", "finished"):
+                url = _extract_url_value(item)
+                if url:
+                    return url
+                url = _extract_url_value(result)
+                if url:
+                    return url
+                raise RuntimeError(f"{self.provider_name} async task completed but no URL: {json.dumps(item)[:500]}")
+            if status in ("failed", "error", "cancelled"):
+                raise RuntimeError(f"{self.provider_name} async task failed: {item.get('error', json.dumps(item)[:300])}")
+
+            await asyncio.sleep(interval)
+
+        raise RuntimeError(f"{self.provider_name} async task {task_id} timed out after {timeout}s")
 
     async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         api_key = request.api_key or self.api_key
@@ -348,13 +283,20 @@ class AgnesProvider(ImageGenerationProvider):
             os.unlink(payload_file)
 
         # Parse response: {"data": [{"url": "..."}]}
+        # Also handles async token商 responses: {"data": [{"status": "submitted", "task_id": "..."}]}
         images = data.get("data", [])
         if not images:
             raise RuntimeError(f"Agnes returned no images: {data}")
 
-        image_url = images[0].get("url", "")
+        image_url = extract_image_url(data)
         if not image_url:
-            raise RuntimeError(f"Agnes no URL in response: {data}")
+            # Check for async submission (token商 proxy)
+            task_id = images[0].get("task_id", "")
+            status = images[0].get("status", "")
+            if task_id and status in ("submitted", "processing", "pending", "queued"):
+                image_url = await self._poll_async_task(task_id, api_key)
+            else:
+                raise RuntimeError(f"Agnes no URL in response: {data}")
 
         # Step 2: Download the generated image via curl
         proc2 = await asyncio.create_subprocess_exec(
@@ -533,8 +475,14 @@ def _find_meta(name: str) -> ProviderMeta | None:
     return None
 
 
-def create_provider(name: str) -> ImageGenerationProvider:
-    """Create a provider instance by name, reading endpoint/model_id from config."""
+def create_provider(name: str, endpoint_override: str = "", model_id_override: str = "") -> ImageGenerationProvider:
+    """Create a provider instance by name, reading endpoint/model_id from config.
+
+    If endpoint_override is provided (e.g. from user-configured image_configs.apiUrl),
+    it is used instead of the registry endpoint.  The override is treated as a base URL
+    and /v1/images/generations is appended when the override does not already end
+    with that path.
+    """
     meta = _find_meta(name)
     if meta is None:
         available = [m.name for m in PROVIDER_REGISTRY]
@@ -551,9 +499,24 @@ def create_provider(name: str) -> ImageGenerationProvider:
     if meta.model_id:
         kwargs["model_id"] = meta.model_id
 
+    # Override with user-provided config (for third-party token商)
+    if endpoint_override:
+        base = endpoint_override.rstrip("/")
+        if base.endswith("/v1/images/generations"):
+            kwargs["endpoint"] = base
+        elif base.endswith("/v1"):
+            kwargs["endpoint"] = f"{base}/images/generations"
+        else:
+            kwargs["endpoint"] = f"{base}/v1/images/generations"
+    if model_id_override and model_id_override != meta.name:
+        kwargs["model_id"] = model_id_override
+
     # FalAiProvider and SiliconFlowProvider need a model param
     if name.startswith("fal-") or name.startswith("siliconflow-"):
         kwargs["model"] = name.split("-", 1)[1]  # "fast" or "pro"
+
+    # Pass the provider name to the class (used in error messages, result.provider, etc.)
+    kwargs["name"] = meta.name
 
     # Only pass kwargs the class actually accepts
     import inspect

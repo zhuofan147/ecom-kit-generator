@@ -1,7 +1,9 @@
 import pytest
 
+import app.services.plan_engine as plan_engine
 from app.main import app
 from app.services.plan_engine import (
+    PlanConfigurationError,
     TEMPLATE_DETAIL,
     TEMPLATE_SCENE,
     TEMPLATE_SELLING_POINT,
@@ -10,6 +12,7 @@ from app.services.plan_engine import (
     TEMPLATE_WHITE_BG,
     PlanRequest,
     _AI_PLAN_SYSTEM_PROMPT,
+    _build_ai_user_prompt,
     _build_product_plan_from_ai,
     _build_chat_completions_url,
     _get_plan_ai_client,
@@ -65,6 +68,48 @@ def test_plan_engine_returns_five_points_and_five_image_plans(monkeypatch):
     assert plan.image_plans[0].ai_prompt.endswith(build_layer3())
     assert plan.mobile_checklist
     assert plan.conversion_checklist
+
+
+def test_ai_plan_requires_configured_llm_instead_of_rule_fallback(monkeypatch):
+    monkeypatch.setenv("PLAN_ENGINE_MODE", "ai")
+    monkeypatch.delenv("TOKENPLAN_API_KEY", raising=False)
+    monkeypatch.delenv("PLAN_AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("SILICONFLOW_KEY", raising=False)
+
+    request = PlanRequest(
+        product_name="",
+        product_raw_info="Insta360 X5 售价2999元",
+        platform="taobao",
+        kit_types=["main_white"],
+        llm_config={},
+    )
+
+    with pytest.raises(PlanConfigurationError, match="配置大语言模型"):
+        create_product_plan(request)
+
+
+def test_ai_plan_api_failure_does_not_fall_back_to_rule_plan(monkeypatch):
+    monkeypatch.setenv("PLAN_ENGINE_MODE", "ai")
+
+    def fail_urlopen(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(plan_engine, "urlopen", fail_urlopen)
+    request = PlanRequest(
+        product_name="",
+        product_raw_info="Insta360 X5 售价2999元",
+        platform="taobao",
+        kit_types=["main_white"],
+        llm_config={
+            "apiUrl": "https://api.example.com/v1",
+            "apiKey": "key",
+            "model": "model",
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        create_product_plan(request)
 
 
 def test_plan_engine_uses_selected_kit_types(monkeypatch):
@@ -162,6 +207,85 @@ def test_ai_plan_prompt_fuses_ai_layer2_between_fixed_layers_without_analysis():
     assert "抠图产品分析" not in prompt
     assert "#202020" not in prompt
     assert "图生图任务" not in prompt
+
+
+def test_ai_plan_result_keeps_chinese_display_prompt_only():
+    request = PlanRequest(
+        product_name="无线蓝牙耳机",
+        platform="taobao",
+        kit_types=["main_white"],
+    )
+
+    plan = _build_product_plan_from_ai(
+        {
+            "refined_selling_points": ["降噪"],
+            "image_plans": [
+                {
+                    "index": 1,
+                    "main_title": "清晰降噪",
+                    "subtitle": "通勤更安静",
+                    "visual_suggestion": "白底展示",
+                    "ai_prompt": "白底主图，突出降噪卖点",
+                    "kit_type": "main_white",
+                }
+            ],
+        },
+        request,
+    )
+
+    image_plan = plan.image_plans[0]
+    assert "白底主图" in image_plan.ai_prompt
+
+
+def test_ai_plan_prompt_uses_raw_product_info_for_extraction():
+    request = PlanRequest(
+        product_name="",
+        product_raw_info="Insta360 X5，售价2999元，主打8K全景、防抖、防水，适合户外旅行vlog。",
+        platform="taobao",
+        kit_types=["main_white", "usage_scene"],
+    )
+
+    prompt = _build_ai_user_prompt(request)
+
+    assert "商品原始信息（最高优先级，请先识别结构化字段）" in prompt
+    assert "Insta360 X5" in prompt
+    assert "售价2999元" in prompt
+
+
+def test_ai_plan_result_carries_recognized_product_info():
+    request = PlanRequest(
+        product_name="",
+        product_raw_info="Insta360 X5，售价2999元，主打8K全景、防抖、防水，适合户外旅行vlog。",
+        platform="taobao",
+        kit_types=["main_white"],
+    )
+
+    plan = _build_product_plan_from_ai(
+        {
+            "product_info": {
+                "name": "Insta360 X5",
+                "price": "2999元",
+                "selling_points": "8K全景\n防抖\n防水",
+                "usage_scene": "户外旅行vlog",
+            },
+            "refined_selling_points": ["8K全景", "防抖", "防水"],
+            "image_plans": [
+                {
+                    "index": 1,
+                    "main_title": "全景大片",
+                    "subtitle": "旅行记录",
+                    "visual_suggestion": "white background",
+                    "ai_prompt": "generic product poster",
+                    "kit_type": "main_white",
+                }
+            ],
+        },
+        request,
+    )
+
+    assert plan.product_info["name"] == "Insta360 X5"
+    assert plan.product_info["price"] == "2999元"
+    assert "防抖" in plan.product_info["selling_points"]
 
 
 def test_v3_prompt_framework_fuses_layers_without_analysis_or_old_prefix():

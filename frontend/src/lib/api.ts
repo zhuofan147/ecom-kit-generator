@@ -1,6 +1,17 @@
 import type { JobResponse, KitSizeMap, KitType, ModelConfig, Platform, ProductInfo, ProductPlan, UploadResponse } from "@/types";
 
-type ApiModelConfig = Pick<ModelConfig, "apiUrl" | "apiKey" | "model">;
+export type ApiModelConfig = Pick<ModelConfig, "apiUrl" | "apiKey" | "model">;
+export type SharedModelSettings = {
+  settingsVersion: number;
+  theme: string;
+  llmConfigs: ModelConfig[];
+  imageConfigs: ModelConfig[];
+  visionConfigs: ModelConfig[];
+  selectedLlmConfigId: string;
+  selectedImageConfigId: string;
+  selectedVisionConfigId: string;
+  providers: string[];
+};
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ||
   (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
@@ -8,6 +19,21 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ||
 export function assetUrl(path: string) {
   if (path.startsWith("http")) return path;
   return `${API_BASE_URL}${path}`;
+}
+
+export async function loadModelSettings(): Promise<SharedModelSettings | null> {
+  const response = await fetch(`${API_BASE_URL}/api/settings`, { cache: "no-store" });
+  const body = await parseResponse<{ settings: SharedModelSettings | null }>(response);
+  return body.settings;
+}
+
+export async function saveModelSettings(settings: SharedModelSettings): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  await parseResponse<{ ok: boolean }>(response);
 }
 
 export async function uploadProductImage(files: File | File[]): Promise<UploadResponse> {
@@ -31,15 +57,20 @@ export async function createGenerationJob(input: {
   kitTypes: KitType[];
   kitSizes?: KitSizeMap;
   plannedPrompts?: Partial<Record<KitType, string>>;
-  provider?: string;
+  providers?: string[];
   llmConfig?: ApiModelConfig;
-  imageConfig?: ApiModelConfig;
+  imageConfigs?: ApiModelConfig[];
   visionConfig?: ApiModelConfig;
 }) {
   const response = await fetch(`${API_BASE_URL}/api/generate/kit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({...buildGenerationPayload(input), provider: input.provider || "agnes", run_plan: false, llm_config: modelConfigPayload(input.llmConfig)})
+    body: JSON.stringify({
+      ...buildGenerationPayload(input),
+      providers: input.providers || [],
+      run_plan: false,
+      llm_config: modelConfigPayload(input.llmConfig),
+    })
   });
   return parseResponse<{ job_id: string; status: string; total_images: number }>(response);
 }
@@ -118,11 +149,12 @@ export async function testLlmConnection(config: {
 export async function listModels(config: {
   apiUrl: string;
   apiKey: string;
+  modelType?: "llm" | "vision" | "image" | "all";
 }): Promise<{ models: string[]; error?: string }> {
   const resp = await fetch(`${API_BASE_URL}/api/list-models`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_url: config.apiUrl, api_key: config.apiKey, model: "" }),
+    body: JSON.stringify({ api_url: config.apiUrl, api_key: config.apiKey, model: "", model_type: config.modelType ?? "all" }),
   });
   return parseResponse(resp);
 }
@@ -144,6 +176,7 @@ export function buildPlanPayload(input: {
 }) {
   return {
     product_id: input.productId ?? "",
+    product_raw_info: input.productInfo.rawInfo ?? "",
     product_name: input.productInfo.name,
     product_dimensions: input.productInfo.dimensions,
     product_price: input.productInfo.price,
@@ -164,7 +197,7 @@ export function buildGenerationPayload(input: {
   kitTypes: KitType[];
   kitSizes?: KitSizeMap;
   plannedPrompts?: Partial<Record<KitType, string>>;
-  imageConfig?: ApiModelConfig;
+  imageConfigs?: ApiModelConfig[];
   visionConfig?: ApiModelConfig;
 }) {
   return {
@@ -172,6 +205,7 @@ export function buildGenerationPayload(input: {
     platform: input.platform,
     product_info: {
       name: input.productInfo.name,
+      raw_info: input.productInfo.rawInfo ?? "",
       category: input.productInfo.category,
       material: input.productInfo.material,
       dimensions: input.productInfo.dimensions,
@@ -184,7 +218,7 @@ export function buildGenerationPayload(input: {
     },
     kit_types: input.kitTypes,
     kit_sizes: input.kitSizes ?? {},
-    image_config: modelConfigPayload(input.imageConfig),
+    image_configs: (input.imageConfigs || []).map(modelConfigPayload),
     vision_config: modelConfigPayload(input.visionConfig),
   };
 }

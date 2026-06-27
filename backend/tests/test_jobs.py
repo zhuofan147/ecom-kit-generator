@@ -4,6 +4,7 @@ import time
 from PIL import Image
 
 from app.models.job import JobStatus
+import app.routers.generate as generate_router
 from app.services.jobs import JobStore
 from app.services.imagegen import ImageGenerationProvider, ImageGenerationRequest, ImageGenerationResult
 
@@ -162,6 +163,68 @@ def test_job_store_fuses_planned_prompt_with_default_prompt(tmp_path):
     assert "光泽" in prompt
     assert "色彩" in prompt
     assert "纹理" in prompt
+
+
+def test_job_store_selects_planned_prompt_language_by_provider(tmp_path):
+    product_path = tmp_path / "product.png"
+    Image.new("RGBA", (120, 120), (30, 160, 210, 255)).save(product_path)
+
+    planned = {
+        "main_white": {
+            "zh": "中文生图提示词",
+            "en": "English generation prompt",
+        },
+    }
+
+    domestic_store = JobStore(output_dir=tmp_path)
+    domestic_store._provider = CapturingProvider()
+    domestic_job = domestic_store.create_generation_job(
+        product_id="product-domestic",
+        masked_path=product_path,
+        platform="taobao",
+        product_info={"name": "测试商品", "planned_prompts": planned},
+        kit_types=["main_white"],
+        providers=["volcengine-ark"],
+    )
+    asyncio.run(domestic_store.run_job(domestic_job.id))
+    domestic_prompt = domestic_store.get(domestic_job.id).results[0].prompt
+
+    foreign_store = JobStore(output_dir=tmp_path)
+    foreign_store._provider = CapturingProvider()
+    foreign_job = foreign_store.create_generation_job(
+        product_id="product-foreign",
+        masked_path=product_path,
+        platform="taobao",
+        product_info={"name": "测试商品", "planned_prompts": planned},
+        kit_types=["main_white"],
+        providers=["agnes"],
+    )
+    asyncio.run(foreign_store.run_job(foreign_job.id))
+    foreign_prompt = foreign_store.get(foreign_job.id).results[0].prompt
+
+    assert "中文生图提示词" in domestic_prompt
+    assert "English generation prompt" not in domestic_prompt
+    assert "English generation prompt" in foreign_prompt
+    assert "中文生图提示词" not in foreign_prompt
+
+
+def test_foreign_generation_translates_modified_chinese_prompt(monkeypatch):
+    monkeypatch.setattr(
+        generate_router,
+        "_translate_prompt_to_english",
+        lambda prompt, llm_config: f"translated: {prompt}",
+    )
+
+    planned = generate_router._ensure_foreign_prompt_translations(
+        {"main_white": "用户修改后的中文提示词"},
+        ["agnes"],
+        {"apiKey": "llm-key", "apiUrl": "https://api.example.com/v1", "model": "model"},
+    )
+
+    assert planned["main_white"] == {
+        "zh": "用户修改后的中文提示词",
+        "en": "translated: 用户修改后的中文提示词",
+    }
 
 
 def test_job_store_keeps_successful_images_when_one_type_fails(tmp_path):

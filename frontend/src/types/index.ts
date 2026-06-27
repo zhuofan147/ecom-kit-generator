@@ -99,6 +99,7 @@ export const KIT_SIZE_PRESETS = [
 ] as const;
 
 export type ProductInfo = {
+  rawInfo?: string;
   name: string;
   category: string;
   material: string;
@@ -120,6 +121,7 @@ export type ImagePlan = {
 };
 
 export type ProductPlan = {
+  product_info?: Partial<ProductInfo> & Record<string, unknown>;
   refined_selling_points: string[];
   image_plans: ImagePlan[];
   mobile_checklist: string[];

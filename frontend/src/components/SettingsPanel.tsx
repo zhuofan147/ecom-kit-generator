@@ -5,6 +5,14 @@ import { useState } from "react";
 
 import type { ModelConfig, ThemeStyle } from "@/types";
 import { testLlmConnection, listModels } from "@/lib/api";
+import { hasCompleteModelConfig } from "@/lib/planning";
+import {
+  applyModelPreset,
+  IMAGE_MODEL_PRESETS,
+  LLM_MODEL_PRESETS,
+  type ModelPreset,
+  VISION_MODEL_PRESETS,
+} from "@/store";
 
 type Props = {
   open: boolean;
@@ -30,6 +38,25 @@ type Props = {
   onAddVisionConfig?: () => void;
   onUpdateVisionConfig?: (id: string, patch: Partial<ModelConfig>) => void;
 };
+
+type ConfigModelType = "llm" | "image" | "vision";
+type TestResult = { ok: boolean; msg: string } | null;
+type ListModelsResult = { models?: string[]; error?: string };
+type ModelConfigField = "apiUrl" | "apiKey" | "model";
+
+export function nextListModelsResult(modelType: ConfigModelType, result: ListModelsResult): TestResult {
+  if (result.error) {
+    return { ok: false, msg: `✗ ${result.error}` };
+  }
+  if (result.models?.length) {
+    return null;
+  }
+  return { ok: false, msg: modelType === "vision" ? "未识别到视觉模型" : "未获取到模型" };
+}
+
+export function nextModelFieldPatch(field: ModelConfigField, value: string): Partial<ModelConfig> {
+  return { [field]: value, availableModels: undefined };
+}
 
 const themeOptions: Array<{ value: ThemeStyle; label: string; swatch: string }> = [
   { value: "light", label: "明亮", swatch: "bg-white" },
@@ -108,33 +135,39 @@ export function SettingsPanel({
 
           <ModelConfigSection
             title="大语言模型配置"
+            modelType="llm"
             configs={llmConfigs}
             selectedId={selectedLlmConfigId}
             onAdd={onAddLlmConfig}
             onSelect={onSelectLlmConfig}
             onUpdate={onUpdateLlmConfig}
             onRemove={onRemoveLlmConfig}
+            presets={LLM_MODEL_PRESETS}
           />
 
           <ModelConfigSection
             title="生图模型配置"
+            modelType="image"
             configs={imageConfigs}
             selectedId={selectedImageConfigId}
             onAdd={onAddImageConfig}
             onSelect={onSelectImageConfig}
             onUpdate={onUpdateImageConfig}
             onRemove={onRemoveImageConfig}
+            presets={IMAGE_MODEL_PRESETS}
           />
 
           {visionConfigs && onAddVisionConfig && onUpdateVisionConfig && onSelectVisionConfig && (
             <ModelConfigSection
               title="视觉模型配置（Vision）"
+              modelType="vision"
               configs={visionConfigs}
               selectedId={selectedVisionConfigId ?? "vision-default"}
               onAdd={onAddVisionConfig}
               onSelect={onSelectVisionConfig}
               onUpdate={onUpdateVisionConfig}
               onRemove={onRemoveVisionConfig}
+              presets={VISION_MODEL_PRESETS}
             />
           )}
         </div>
@@ -147,45 +180,44 @@ export function SettingsPanel({
 
 function ModelConfigSection({
   title,
+  modelType,
   configs,
-  selectedId,
   onAdd,
-  onSelect,
   onUpdate,
   onRemove,
+  presets,
 }: {
   title: string;
+  modelType: "llm" | "image" | "vision";
   configs: ModelConfig[];
   selectedId: string;
   onAdd: () => void;
   onSelect: (id: string) => void;
   onUpdate: (id: string, patch: Partial<ModelConfig>) => void;
   onRemove: (id: string) => void;
+  presets?: ModelPreset[];
 }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-semibold text-ink">{title}</h3>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-1.5 rounded border border-action bg-white px-3 py-1.5 text-sm font-semibold text-action hover:bg-panel"
-        >
-          <Plus size={15} />
-          添加
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onAdd} className="inline-flex items-center gap-1.5 rounded border border-action bg-white px-3 py-1.5 text-sm font-semibold text-action hover:bg-panel">
+            <Plus size={15} /> 添加
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">
         {configs.map((config) => (
           <ConfigCard
             key={config.id}
-            title={title}
+            modelType={modelType}
             config={config}
-            isSelected={selectedId === config.id}
-            onSelect={() => onSelect(config.id)}
             onUpdate={(patch) => onUpdate(config.id, patch)}
+            onApplyPreset={presets ? (presetId) => onUpdate(config.id, applyModelPreset(config, presetId, presets)) : undefined}
             onRemove={() => onRemove(config.id)}
+            presets={presets}
           />
         ))}
       </div>
@@ -196,22 +228,22 @@ function ModelConfigSection({
 // ── single config card ────────────────────────────────────────────
 
 function ConfigCard({
-  title,
+  modelType,
   config,
-  isSelected,
-  onSelect,
   onUpdate,
+  onApplyPreset,
   onRemove,
+  presets,
 }: {
-  title: string;
+  modelType: ConfigModelType;
   config: ModelConfig;
-  isSelected: boolean;
-  onSelect: () => void;
   onUpdate: (patch: Partial<ModelConfig>) => void;
+  onApplyPreset?: (presetId: string) => void;
   onRemove: () => void;
+  presets?: ModelPreset[];
 }) {
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult>(null);
   const [loadingModels, setLoadingModels] = useState(false);
 
   const handleTest = async () => {
@@ -236,15 +268,22 @@ function ConfigCard({
   };
 
   const handleListModels = async () => {
+    console.log("[handleListModels] modelType:", modelType, "apiUrl:", config.apiUrl?.substring(0, 30));
+    if (modelType !== "image" && !config.apiUrl.trim()) {
+      setTestResult({ ok: false, msg: "请先填写 base_url" });
+      return;
+    }
+    if (!config.apiKey.trim()) {
+      setTestResult({ ok: false, msg: "请先填写 API Key" });
+      onUpdate({ availableModels: undefined });
+      return;
+    }
+    setTestResult(null);
     setLoadingModels(true);
     try {
-      const res = await listModels({ apiUrl: config.apiUrl, apiKey: config.apiKey });
-      if (res.models?.length) {
-        onUpdate({ availableModels: res.models });
-      }
-      if (res.error) {
-        setTestResult({ ok: false, msg: `✗ ${res.error}` });
-      }
+      const res = await listModels({ apiUrl: config.apiUrl, apiKey: config.apiKey, modelType });
+      onUpdate({ availableModels: res.models?.length ? res.models : [] });
+      setTestResult(nextListModelsResult(modelType, res));
     } catch (e: any) {
       setTestResult({ ok: false, msg: `✗ ${e.message || "获取失败"}` });
     } finally {
@@ -252,20 +291,32 @@ function ConfigCard({
     }
   };
 
-  const availableModels = config.availableModels;
+  const availableModels = config.apiKey.trim() ? config.availableModels : undefined;
   const showModelSelect = availableModels && availableModels.length > 0;
+  const selectedImagePresetId = presets?.find((preset) => preset.model === config.model || preset.id === config.model)?.id ?? "";
+  const isConfigured = hasCompleteModelConfig(config);
+  const isEnabled = isConfigured && config.enabled !== false;
+  const statusLabel = !isConfigured ? "未配置" : isEnabled ? "已启用" : "已停用";
 
   return (
     <div className="rounded border border-line bg-panel p-3">
-      <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
-        <input
-          type="radio"
-          name={title}
-          checked={isSelected}
-          onChange={onSelect}
-        />
-        当前选择
-        <span className="text-xs font-normal text-slate-500">{config.enabled ? "启用" : "停用"}</span>
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+        <button
+          type="button"
+          onClick={() => {
+            if (isConfigured) onUpdate({ enabled: !isEnabled });
+          }}
+          disabled={!isConfigured}
+          title={isConfigured ? undefined : "请先填写 base_url、API Key 和模型名"}
+          className={`inline-flex h-8 items-center rounded border px-3 text-xs font-semibold ${
+            isEnabled
+              ? "border-action bg-white text-action hover:bg-panel"
+              : "border-line bg-white text-slate-500 hover:border-action hover:text-action disabled:cursor-not-allowed disabled:opacity-50"
+          }`}
+        >
+          {isEnabled ? "停用" : "启用"}
+        </button>
+        <span className="text-xs font-normal text-slate-500">{statusLabel}</span>
         <button
           type="button"
           className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
@@ -274,11 +325,28 @@ function ConfigCard({
         >
           <X size={14} />
         </button>
-      </label>
+      </div>
 
       <div className="grid gap-3 md:grid-cols-2">
+        {presets && onApplyPreset && (
+          <div className="space-y-1.5 md:col-span-2">
+            <span className="text-xs font-medium text-slate-600">模型预设</span>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onApplyPreset(e.target.value);
+              }}
+              className="w-full rounded border border-line bg-white px-3 py-2 text-sm text-ink"
+            >
+              <option value="">-- 选择模型 --</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <TextField
-          label="名称"
+          label="商家"
           value={config.name}
           onChange={(name) => onUpdate({ name })}
         />
@@ -295,37 +363,55 @@ function ConfigCard({
               ))}
             </select>
           </div>
+        ) : modelType === "image" && presets && onApplyPreset ? (
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-slate-600">生图模型</span>
+            <select
+              value={selectedImagePresetId}
+              onChange={(e) => {
+                if (e.target.value) onApplyPreset(e.target.value);
+              }}
+              className="w-full rounded border border-line bg-white px-3 py-2 text-sm text-ink"
+            >
+              <option value="">-- 选择生图模型 --</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.name}</option>
+              ))}
+            </select>
+          </div>
         ) : (
           <TextField
             label="模型名"
             value={config.model}
-            onChange={(model) => onUpdate({ model })}
+            onChange={(model) => onUpdate(nextModelFieldPatch("model", model))}
           />
         )}
         <TextField
-          label="API 地址"
+          label="base_url"
           value={config.apiUrl}
-          onChange={(apiUrl) => onUpdate({ apiUrl })}
+          onChange={(apiUrl) => onUpdate(nextModelFieldPatch("apiUrl", apiUrl))}
         />
         <TextField
           label="API Key"
           value={config.apiKey}
           type="password"
-          onChange={(apiKey) => onUpdate({ apiKey })}
+          onChange={(apiKey) => onUpdate(nextModelFieldPatch("apiKey", apiKey))}
         />
       </div>
 
       {/* Buttons row */}
       <div className="mt-3 flex flex-wrap items-start gap-2">
-        <button
-          type="button"
-          onClick={handleTest}
-          disabled={testing}
-          className="inline-flex items-center gap-1.5 rounded border border-line bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-action hover:text-action disabled:opacity-50"
-        >
-          <PlugZap size={13} />
-          {testing ? "测试中…" : "测试连通"}
-        </button>
+        {modelType !== "image" && (
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing}
+            className="inline-flex items-center gap-1.5 rounded border border-line bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-action hover:text-action disabled:opacity-50"
+          >
+            <PlugZap size={13} />
+            {testing ? "测试中…" : "测试连通"}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleListModels}

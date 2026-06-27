@@ -13,10 +13,11 @@ import { ProductInfoForm } from "@/components/ProductInfoForm";
 import { ProgressBar } from "@/components/ProgressBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { UploadZone } from "@/components/UploadZone";
-import { assetUrl, createGenerationJob, createProductPlan, fetchJob, fetchJobs, retryGeneratedImage, uploadProductImage } from "@/lib/api";
+import { ApiModelConfig, assetUrl, createGenerationJob, createProductPlan, fetchJob, fetchJobs, uploadProductImage } from "@/lib/api";
 import { platformRules } from "@/lib/platform-rules";
-import { useAppStore } from "@/store";
-import type { GeneratedImage, JobResponse, KitType, ProductInfo, ProductPlan } from "@/types";
+import { canCreateStructuredPlan, hasCompleteModelConfig } from "@/lib/planning";
+import { useAppStore, normalizeImageProvider } from "@/store";
+import type { GeneratedImage, JobResponse, KitType, ModelConfig, ProductInfo, ProductPlan } from "@/types";
 
 const PLAN_DRAFT_STORAGE_KEY = "ecom-kit-generator-plan-draft";
 
@@ -32,20 +33,20 @@ function readPlanDraft(): ProductPlan | undefined {
 
 export default function Home() {
   const {
-    upload, job, productInfo, platform, kitTypes, kitSizes, provider, theme,
+    upload, job, productInfo, platform, kitTypes, kitSizes, providers, theme,
     llmConfigs, imageConfigs, selectedLlmConfigId, selectedImageConfigId,
     visionConfigs, selectedVisionConfigId,
-    setUpload, setJob, setProductInfo, setPlatform, setKitTypes, toggleKitType, setProvider,
+    setUpload, setJob, setProductInfo, setPlatform, setKitTypes, toggleKitType, toggleProvider,
     setKitSize, setTheme, addLlmConfig, addImageConfig, addVisionConfig,
     updateLlmConfig, updateImageConfig, updateVisionConfig,
     removeLlmConfig, removeImageConfig, removeVisionConfig,
-    selectLlmConfig, selectImageConfig, selectVisionConfig, clearDraft
+    selectLlmConfig, selectImageConfig, selectVisionConfig, hydrateFromStorage, clearDraft
   } = useAppStore();
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [plan, setPlan] = useState<ProductPlan | undefined>(() => readPlanDraft());
+  const [plan, setPlan] = useState<ProductPlan | undefined>();
   const [historyItems, setHistoryItems] = useState<JobResponse[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,9 +55,16 @@ export default function Home() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastHydratedJobRefreshRef = useRef<string | null>(null);
 
   const rule = platformRules[platform];
   const isGenerating = busy && !uploading;
+  const canPlan = canCreateStructuredPlan(productInfo, Boolean(upload));
+
+  useEffect(() => {
+    hydrateFromStorage();
+    setPlan(readPlanDraft());
+  }, [hydrateFromStorage]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -98,6 +106,25 @@ export default function Home() {
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
+
+  useEffect(() => {
+    if (!job?.id || jobId) return;
+    if (lastHydratedJobRefreshRef.current === job.id) return;
+    lastHydratedJobRefreshRef.current = job.id;
+    let cancelled = false;
+    void fetchJob(job.id)
+      .then((nextJob) => {
+        if (cancelled) return;
+        setJob(nextJob);
+        if (nextJob.status === "running" || nextJob.status === "pending") {
+          setJobId(nextJob.id);
+        }
+      })
+      .catch(() => {
+        lastHydratedJobRefreshRef.current = null;
+      });
+    return () => { cancelled = true; };
+  }, [job?.id, jobId, setJob]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -143,10 +170,22 @@ export default function Home() {
 
   // ── plan ───────────────────────────────────────────────────────
   const createPlan = async () => {
+    if (!canPlan) {
+      setError("请先填写商品信息或上传产品图");
+      return;
+    }
+    const selectedLlm = usableModelConfig(llmConfigs, selectedLlmConfigId);
+    const selectedVision = usableModelConfig(visionConfigs, selectedVisionConfigId);
+    if (!hasCompleteModelConfig(selectedLlm)) {
+      setError("请先在设置中配置大语言模型：商家、base_url、API Key 和模型名称都不能为空");
+      return;
+    }
+    if (upload && !hasCompleteModelConfig(selectedVision)) {
+      setError("请先在设置中配置视觉模型：商家、base_url、API Key 和模型名称都不能为空");
+      return;
+    }
     setPlanning(true); setError(null);
     try {
-      const selectedLlm = llmConfigs.find(c => c.id === selectedLlmConfigId);
-      const selectedVision = visionConfigs.find(c => c.id === selectedVisionConfigId);
       const nextPlan = await createProductPlan({
         productId: upload?.product_id,
         productInfo,
@@ -157,6 +196,9 @@ export default function Home() {
         visionConfig: selectedVision ? { apiUrl: selectedVision.apiUrl, apiKey: selectedVision.apiKey, model: selectedVision.model } : undefined,
       });
       setPlan(nextPlan);
+      if (nextPlan.product_info) {
+        setProductInfo(productInfoFromPlan(nextPlan, productInfo));
+      }
       setKitTypes(nextPlan.image_plans.map((item) => item.kit_type));
     } catch (err) {
       setError(err instanceof Error ? err.message : "方案规划失败");
@@ -177,18 +219,29 @@ export default function Home() {
       },
       {}
     );
+    const effectiveProductInfo = plannedPlan?.product_info ? productInfoFromPlan(plannedPlan, productInfo) : productInfo;
     try {
       const created = await createGenerationJob({
         productId: upload.product_id,
         platform,
-        productInfo,
+        productInfo: effectiveProductInfo,
         kitTypes: plannedKitTypes,
         kitSizes,
         plannedPrompts,
-        provider,
-        llmConfig: (() => { const c = llmConfigs.find(c => c.id === selectedLlmConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
-        imageConfig: (() => { const c = imageConfigs.find(c => c.id === selectedImageConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
-        visionConfig: (() => { const c = visionConfigs.find(c => c.id === selectedVisionConfigId); return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined; })(),
+        providers,
+        llmConfig: (() => {
+          const c = usableModelConfig(llmConfigs, selectedLlmConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        })(),
+        imageConfigs: providers.map((p) => {
+          const c = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p) ??
+            imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        }).filter((x): x is ApiModelConfig => Boolean(x)),
+        visionConfig: (() => {
+          const c = usableModelConfig(visionConfigs, selectedVisionConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        })(),
       });
       setJob({
         id: created.job_id,
@@ -234,20 +287,60 @@ export default function Home() {
   };
 
   const retryImage = async (image: GeneratedImage) => {
-    if (!job) return;
+    if (!upload) return;
     setBusy(true); setError(null); startTimer();
+    const plannedPlan = plan;
+    const plannedPrompts = plannedPlan?.image_plans?.reduce<Partial<Record<KitType, string>>>(
+      (acc, item) => {
+        acc[item.kit_type] = item.ai_prompt;
+        return acc;
+      },
+      {}
+    );
+    const effectiveProductInfo = plannedPlan?.product_info
+      ? productInfoFromPlan(plannedPlan, productInfo)
+      : productInfo;
     try {
-      await retryGeneratedImage({ jobId: job.id, kitType: image.kit_type });
-      setJobId(job.id);
+      const created = await createGenerationJob({
+        productId: upload.product_id,
+        platform,
+        productInfo: effectiveProductInfo,
+        kitTypes: [image.kit_type as KitType],
+        kitSizes,
+        plannedPrompts,
+        providers,
+        llmConfig: (() => {
+          const c = usableModelConfig(llmConfigs, selectedLlmConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        })(),
+        imageConfigs: providers.map((p) => {
+          const c = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p) ??
+            imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        }).filter((x): x is ApiModelConfig => Boolean(x)),
+        visionConfig: (() => {
+          const c = usableModelConfig(visionConfigs, selectedVisionConfigId);
+          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+        })(),
+      });
+      setJobId(created.job_id);
       setJob({
-        ...job,
+        id: created.job_id,
+        product_id: upload.product_id,
+        platform,
         status: "running",
+        progress: 5,
         message: `正在重新生成 ${image.label || image.kit_type}…`,
-        results: job.results.map((item) =>
-          item.kit_type === image.kit_type
-            ? { ...item, status: "running", error: null }
-            : item
-        ),
+        results: [{
+          id: created.job_id,
+          file_name: "",
+          url: "",
+          prompt: "",
+          provider: providers[0] || "",
+          kit_type: image.kit_type,
+          label: image.label,
+          status: "running",
+        }],
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "重新生成失败");
@@ -340,7 +433,17 @@ export default function Home() {
             onToggle={toggleKitType}
             onSizeChange={setKitSize}
           />
-          <ModelSelector value={provider} onChange={setProvider} />
+          <ModelSelector
+            selected={providers}
+            onToggle={toggleProvider}
+            onOpenSettings={() => setSettingsOpen(true)}
+            enabledModels={imageConfigs
+              .filter(c => c.enabled !== false && c.model)
+              .map(c => {
+                const name = normalizeImageProvider(c.model || c.id);
+                return { name, label: c.name || c.model || c.id, model_id: c.model || "", endpoint: c.apiUrl || "" };
+              })}
+          />
           <ProductInfoForm value={productInfo} onChange={setProductInfo} />
 
           <section className="space-y-3 rounded border border-line bg-white p-4">
@@ -395,7 +498,7 @@ export default function Home() {
             </h2>
             <button
               type="button"
-              disabled={!upload || busy || planning || kitTypes.length === 0}
+              disabled={!canPlan || busy || planning || kitTypes.length === 0}
               onClick={createPlan}
               className="inline-flex w-full items-center justify-center gap-2 rounded border border-action bg-white px-4 py-2.5 font-semibold text-action transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
             >
@@ -437,6 +540,7 @@ export default function Home() {
 
           <PlanView
             plan={plan}
+            onPlanChange={setPlan}
             disabled={!upload || busy}
             onGenerate={() => generate(plan)}
           />
@@ -573,6 +677,7 @@ function productInfoFromJob(job: JobResponse, fallback: ProductInfo): ProductInf
   const info = job.product_info ?? {};
   return {
     ...fallback,
+    rawInfo: typeof info.raw_info === "string" ? info.raw_info : typeof info.rawInfo === "string" ? info.rawInfo : fallback.rawInfo,
     name: typeof info.name === "string" ? info.name : fallback.name,
     category: typeof info.category === "string" ? info.category : fallback.category,
     material: typeof info.material === "string" ? info.material : fallback.material,
@@ -583,4 +688,26 @@ function productInfoFromJob(job: JobResponse, fallback: ProductInfo): ProductInf
     usageScene: typeof info.usage_scene === "string" ? info.usage_scene : fallback.usageScene,
     competitorDiff: typeof info.competitor_diff === "string" ? info.competitor_diff : fallback.competitorDiff,
   };
+}
+
+function productInfoFromPlan(plan: ProductPlan, fallback: ProductInfo): ProductInfo {
+  const info = plan.product_info ?? {};
+  return {
+    ...fallback,
+    rawInfo: typeof info.raw_info === "string" ? info.raw_info : typeof info.rawInfo === "string" ? info.rawInfo : fallback.rawInfo,
+    name: typeof info.name === "string" ? info.name : fallback.name,
+    category: typeof info.category === "string" ? info.category : fallback.category,
+    material: typeof info.material === "string" ? info.material : fallback.material,
+    dimensions: typeof info.dimensions === "string" ? info.dimensions : fallback.dimensions,
+    sellingPoints: typeof info.selling_points === "string" ? info.selling_points : typeof info.sellingPoints === "string" ? info.sellingPoints : fallback.sellingPoints,
+    price: typeof info.price === "string" ? info.price : fallback.price,
+    audience: typeof info.audience === "string" ? info.audience : fallback.audience,
+    usageScene: typeof info.usage_scene === "string" ? info.usage_scene : typeof info.usageScene === "string" ? info.usageScene : fallback.usageScene,
+    competitorDiff: typeof info.competitor_diff === "string" ? info.competitor_diff : typeof info.competitorDiff === "string" ? info.competitorDiff : fallback.competitorDiff,
+  };
+}
+
+function usableModelConfig(configs: ModelConfig[], selectedId: string): ModelConfig | undefined {
+  const selected = configs.find((config) => config.id === selectedId && config.enabled !== false && hasCompleteModelConfig(config));
+  return selected ?? configs.find((config) => config.enabled !== false && hasCompleteModelConfig(config));
 }

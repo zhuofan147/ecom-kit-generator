@@ -13,6 +13,8 @@ from urllib.error import URLError, HTTPError
 
 from PIL import Image
 
+from app.services.http_client import ssl_context
+
 logger = logging.getLogger(__name__)
 
 VISION_PROMPT = """你是一个电商产品图分析专家。请仔细分析这张产品图，输出以下信息的 JSON：
@@ -122,7 +124,7 @@ def _call_vision_api(image_path: Path, api_url: str, api_key: str, model: str) -
     )
     t0 = time.time()
     try:
-        with urlopen(req, timeout=60) as resp:
+        with urlopen(req, timeout=60, context=ssl_context()) as resp:
             data = json.loads(resp.read())
     except HTTPError as e:
         body = e.read().decode(errors="replace")[:300]

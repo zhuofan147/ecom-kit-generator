@@ -11,3 +11,8 @@ frontend/.next/
 frontend/node_modules/
 frontend/.env.local
 frontend/tsconfig.tsbuildinfo
+
+# Codex CLI (local only, not for distribution)
+.codex/
+.codex-cli/
+backend/outputs/codex/

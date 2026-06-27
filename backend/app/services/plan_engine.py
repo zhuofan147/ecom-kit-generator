@@ -33,21 +33,24 @@ logger = logging.getLogger(__name__)
 
 
 class PlanRequest(BaseModel):
-    product_id: str = ""
-    product_name: str
-    product_dimensions: str = ""
-    product_price: str = ""
-    target_audience: str = ""
-    usage_scene: str = ""
-    selling_points: str = ""
-    competitor_diff: str = ""
-    platform: str = "taobao"
-    kit_types: list[str] = Field(default_factory=list)
-    kit_sizes: dict[str, dict[str, int]] = Field(default_factory=dict)
-    product_image_analysis: dict = Field(default_factory=dict)
-    image_provider: str = "agnes"
-    llm_config: dict = Field(default_factory=dict)  # 前端传来的 LLM API 配置
-    vision_config: dict = Field(default_factory=dict)  # 前端传来的识图 API 配置
+    model_config = {"populate_by_name": True}
+
+    product_id: str = Field(default="", alias="productId")
+    product_raw_info: str = Field(default="", alias="productRawInfo")
+    product_name: str = Field(default="", alias="productName")
+    product_dimensions: str = Field(default="", alias="productDimensions")
+    product_price: str = Field(default="", alias="productPrice")
+    target_audience: str = Field(default="", alias="targetAudience")
+    usage_scene: str = Field(default="", alias="usageScene")
+    selling_points: str = Field(default="", alias="sellingPoints")
+    competitor_diff: str = Field(default="", alias="competitorDiff")
+    platform: str = Field(default="taobao")
+    kit_types: list[str] = Field(default_factory=list, alias="kitTypes")
+    kit_sizes: dict[str, dict[str, int]] = Field(default_factory=dict, alias="kitSizes")
+    product_image_analysis: dict = Field(default_factory=dict, alias="productImageAnalysis")
+    image_provider: str = Field(default="agnes", alias="imageProvider")
+    llm_config: dict = Field(default_factory=dict, alias="llmConfig")
+    vision_config: dict = Field(default_factory=dict, alias="visionConfig")
 
 
 class ImagePlan(BaseModel):
@@ -60,6 +63,7 @@ class ImagePlan(BaseModel):
 
 
 class ProductPlan(BaseModel):
+    product_info: dict = Field(default_factory=dict)
     refined_selling_points: list[str] = Field(default_factory=list)
     image_plans: list[ImagePlan] = Field(default_factory=list)
     mobile_checklist: list[str] = Field(default_factory=list)
@@ -82,6 +86,10 @@ class ProductPlan(BaseModel):
 class PlanEngineMode(str, Enum):
     RULE = "rule"
     AI = "ai"
+
+
+class PlanConfigurationError(RuntimeError):
+    """Raised when AI planning is requested without a usable model config."""
 
 
 def _get_plan_engine_mode() -> PlanEngineMode:
@@ -122,6 +130,15 @@ def _get_plan_ai_client(llm_config: dict | None = None):
     return "", "https://api.deepseek.com", "deepseek-chat"
 
 
+def _has_complete_model_config(config: dict | None) -> bool:
+    return bool(
+        config
+        and str(config.get("apiUrl") or "").strip()
+        and str(config.get("apiKey") or "").strip()
+        and str(config.get("model") or "").strip()
+    )
+
+
 def _build_chat_completions_url(base_url: str) -> str:
     base = base_url.rstrip("/")
     if base.endswith("/chat/completions"):
@@ -149,11 +166,11 @@ _AI_PLAN_SYSTEM_PROMPT = """你是一个顶级电商图生图套图策划专家�
 - 改变模板结构
 
 ## 语言选择
-- 如果目标生图模型是 Codex / Agnes / Flux，prompt 必须用英文写。
-- 如果目标生图模型是中文模型，prompt 用中文写。
-- 你会被告知当前使用的生图模型类型。
+- ai_prompt 必须只用中文写，用于前端查看和编辑提示词。
+- 不要生成英文提示词；如果最终使用国外生图模型，系统会在生图前自动翻译。
 
 ## 卖点处理规则
+- 如果用户提供了商品原始信息，你必须先从中识别产品名称、价格、目标人群、使用场景、材质/规格、核心卖点和竞品差异，并写入输出JSON的product_info字段。
 - 如果用户提供了卖点信息（selling_points 非空），你必须结合产品图分析，融合用户卖点生成更有针对性的标注方案，不要简单复制用户原话。
 - 如果用户未提供卖点，你必须通过产品图分析提炼3-5个核心卖点（如材质、做工、设计亮点、功能特征等）。
 
@@ -185,6 +202,18 @@ _AI_PLAN_SYSTEM_PROMPT = """你是一个顶级电商图生图套图策划专家�
 
 输出格式必须为严格JSON，不要任何markdown标记：
 {
+  "product_info": {
+    "name": "识别出的产品名称",
+    "category": "识别出的类目",
+    "material": "识别出的材质/颜色",
+    "dimensions": "识别出的尺寸/规格",
+    "price": "识别出的价格",
+    "audience": "识别出的目标人群",
+    "usage_scene": "识别出的使用场景",
+    "selling_points": "每行一个核心卖点",
+    "competitor_diff": "识别出的竞品差异",
+    "raw_info": "用户输入的商品原始信息"
+  },
   "refined_selling_points": ["卖点1", "卖点2", "卖点3", "卖点4", "卖点5"],
   "image_plans": [
     {
@@ -192,7 +221,7 @@ _AI_PLAN_SYSTEM_PROMPT = """你是一个顶级电商图生图套图策划专家�
       "main_title": "标题(<=8字)",
       "subtitle": "副标题(<=15字)",
       "visual_suggestion": "画面描述",
-      "ai_prompt": "第2层场景指令",
+      "ai_prompt": "中文第2层场景指令",
       "kit_type": "main_white"
     },
     ...
@@ -236,11 +265,11 @@ PLAN_KIT_SEQUENCE = [
 
 
 def build_layer1() -> str:
-    return "Use the exact product from the reference image. Maintain product consistency including material, color, and shape."
+    return "使用参考图中的确切产品。保持产品一致性，包括材质、颜色和形状。"
 
 
 def build_layer3() -> str:
-    return "Photorealistic product photography, 8k, e-commerce quality, sharp and clean."
+    return "写实产品摄影，8K分辨率，电商级画质，锐利清晰。"
 
 
 def get_template(kit_type) -> str:
@@ -471,9 +500,12 @@ def _sanitize_prompt_fragment(text: str) -> str:
 
 
 def _get_prompt_language(provider: str = "agnes") -> str:
-    """Determine prompt language based on image provider."""
-    if provider.lower() in ("codex", "agnes", "flux"):
-        return "en"
+    """Determine prompt language based on image provider.
+    
+    Always return zh — LLM generates Chinese prompts only.
+    Translation to English (for international providers) happens at submission time
+    via _translate_prompt_to_english() in jobs.py.
+    """
     return "zh"
 
 
@@ -580,11 +612,15 @@ def create_product_plan(request: PlanRequest) -> ProductPlan:
     """Unified entry: routes to AI or rule mode based on PLAN_ENGINE_MODE."""
     mode = _get_plan_engine_mode()
     if mode == PlanEngineMode.AI:
+        if not _has_complete_model_config(getattr(request, "llm_config", None)):
+            raise PlanConfigurationError("请先在设置中配置大语言模型：商家、base_url、API Key 和模型名称都不能为空")
         try:
             return create_product_plan_ai(request)
+        except PlanConfigurationError:
+            raise
         except Exception as e:
-            logger.warning(f"AI plan generation failed, falling back to rule mode: {e}")
-            return _create_product_plan_rule(request)
+            logger.warning(f"AI plan generation failed: {e}")
+            raise
     return _create_product_plan_rule(request)
 
 
@@ -627,6 +663,7 @@ def _create_product_plan_rule(request: PlanRequest) -> ProductPlan:
         ))
 
     return ProductPlan(
+        product_info=_recognized_product_info({}, request),
         refined_selling_points=refined_points,
         image_plans=image_plans,
         mobile_checklist=[
@@ -660,8 +697,7 @@ def create_product_plan_ai(request: PlanRequest) -> ProductPlan:
     """AI-powered plan generation using SiliconFlow GLM-5.2 or DeepSeek."""
     api_key, base_url, default_model = _get_plan_ai_client(getattr(request, "llm_config", None))
     if not api_key:
-        logger.warning("No AI API key configured, falling back to rule mode")
-        return _create_product_plan_rule(request)
+        raise PlanConfigurationError("请先在设置中配置大语言模型：商家、base_url、API Key 和模型名称都不能为空")
 
     user_prompt = _build_ai_user_prompt(request)
     payload = {
@@ -703,7 +739,11 @@ def create_product_plan_ai(request: PlanRequest) -> ProductPlan:
 
 
 def _build_ai_user_prompt(request: PlanRequest) -> str:
-    parts = [f"产品名称：{request.product_name or '未指定'}"]
+    parts = []
+    if request.product_raw_info:
+        parts.append("商品原始信息（最高优先级，请先识别结构化字段）：")
+        parts.append(request.product_raw_info)
+    parts.append(f"产品名称：{request.product_name or '未指定'}")
     if request.product_dimensions:
         parts.append(f"尺寸/规格：{request.product_dimensions}")
     if request.product_price:
@@ -725,14 +765,14 @@ def _build_ai_user_prompt(request: PlanRequest) -> str:
         + "、".join(f"{kit_type.value}（{KIT_LABELS[kit_type]}）" for kit_type in selected)
     )
     parts.append(f"请严格按照以上 {len(selected)} 个套图类型生成方案，image_plans 数量和顺序必须一致。")
-    lang = _get_prompt_language(getattr(request, "image_provider", "agnes"))
-    parts.append(f"当前图片生成模型类型：{request.image_provider}，prompt语言：{'英文' if lang == 'en' else '中文'}。")
+    parts.append("只生成中文提示词：每个 image_plan 只需要包含中文 ai_prompt，不要输出英文提示词字段。")
     if not request.selling_points:
         parts.append("用户未提供卖点，请通过产品图分析提炼3-5个核心卖点并用于selling_point和detail类型。")
     else:
         parts.append("用户已提供卖点，请结合产品图分析融合用户卖点生成更有针对性的标注方案。")
     parts.append("detail类型必须包含具体尺寸数值。如果用户未提供尺寸，请根据产品类型估算合理尺寸。")
     parts.append("每个 ai_prompt 只输出第2层场景指令：基于对应模板填空，不改变结构，不写第1层锁定句和第3层收敛句。")
+    parts.append("输出JSON必须包含product_info字段；如果商品原始信息和拆分字段冲突，以商品原始信息为准。")
     return "\n".join(parts)
 
 
@@ -823,17 +863,38 @@ def _build_product_plan_from_ai(ai_result: dict, request: PlanRequest) -> Produc
                 title=plan_data.get("main_title", ""),
                 subtitle=plan_data.get("subtitle", ""),
                 visual_suggestion=plan_data.get("visual_suggestion", ""),
-                ai_prompt=plan_data.get("ai_prompt", ""),
+                ai_prompt=plan_data.get("ai_prompt", "") or plan_data.get("ai_prompt_zh", ""),
             ),
             kit_type=kit_type.value,
         ))
 
     return ProductPlan(
+        product_info=_recognized_product_info(ai_result, request),
         refined_selling_points=ai_result.get("refined_selling_points", [])[:5],
         image_plans=image_plans,
         mobile_checklist=ai_result.get("mobile_checklist", []),
         conversion_checklist=ai_result.get("conversion_checklist", []),
     )
+
+
+def _recognized_product_info(ai_result: dict, request: PlanRequest) -> dict:
+    raw = ai_result.get("product_info")
+    info = raw if isinstance(raw, dict) else {}
+    selling_points = info.get("selling_points")
+    if isinstance(selling_points, list):
+        selling_points = "\n".join(str(item).strip() for item in selling_points if str(item).strip())
+    return {
+        "raw_info": str(info.get("raw_info") or request.product_raw_info or ""),
+        "name": str(info.get("name") or request.product_name or ""),
+        "category": str(info.get("category") or ""),
+        "material": str(info.get("material") or ""),
+        "dimensions": str(info.get("dimensions") or request.product_dimensions or ""),
+        "price": str(info.get("price") or request.product_price or ""),
+        "audience": str(info.get("audience") or request.target_audience or ""),
+        "usage_scene": str(info.get("usage_scene") or request.usage_scene or ""),
+        "selling_points": str(selling_points or request.selling_points or ""),
+        "competitor_diff": str(info.get("competitor_diff") or request.competitor_diff or ""),
+    }
 
 
 

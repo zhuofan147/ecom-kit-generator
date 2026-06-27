@@ -6,11 +6,12 @@ import { KIT_LABELS, type ProductPlan } from "@/types";
 
 type Props = {
   plan?: ProductPlan;
+  onPlanChange?: (plan: ProductPlan) => void;
   onGenerate: () => void;
   disabled?: boolean;
 };
 
-export function PlanView({ plan, onGenerate, disabled }: Props) {
+export function PlanView({ plan, onPlanChange, onGenerate, disabled }: Props) {
   if (!plan) {
     return (
       <section className="rounded border border-dashed border-line bg-white p-4 text-sm text-slate-500">
@@ -39,7 +40,7 @@ export function PlanView({ plan, onGenerate, disabled }: Props) {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {plan.image_plans.map((imagePlan) => (
+        {plan.image_plans.map((imagePlan, planIndex) => (
           <article key={imagePlan.index} className="rounded border border-line bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -52,13 +53,22 @@ export function PlanView({ plan, onGenerate, disabled }: Props) {
               </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-slate-700">{imagePlan.visual_suggestion}</p>
-            <details className="mt-3 rounded border border-slate-100 bg-slate-50 p-3">
+            <details open className="mt-3 rounded border border-slate-100 bg-slate-50 p-3">
               <summary className="cursor-pointer text-xs font-semibold text-slate-600">
                 查看 AI prompt
               </summary>
-              <p className="mt-2 max-h-28 overflow-auto text-xs leading-5 text-slate-600">
-                {imagePlan.ai_prompt}
-              </p>
+              <textarea
+                className="mt-2 min-h-32 w-full resize-y rounded border border-line bg-white px-3 py-2 text-xs leading-5 text-slate-700 outline-none focus:border-action"
+                value={imagePlan.ai_prompt}
+                onChange={(event) => {
+                  if (!onPlanChange) return;
+                  const nextPlans = plan.image_plans.map((item, index) => index === planIndex
+                    ? { ...item, ai_prompt: event.target.value }
+                    : item
+                  );
+                  onPlanChange({ ...plan, image_plans: nextPlans });
+                }}
+              />
             </details>
           </article>
         ))}

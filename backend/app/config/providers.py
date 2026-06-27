@@ -28,49 +28,11 @@ class ProviderMeta:
 
 
 _PROVIDER_ENDPOINTS = {
-    "siliconflow": "https://api.siliconflow.cn/v1/images/generations",
-    "fal": "https://fal.run",
     "agnes": "https://apihub.agnes-ai.com/v1/images/generations",
     "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
 }
 
 PROVIDER_REGISTRY: list[ProviderMeta] = [
-    ProviderMeta(
-        name="fal-fast",
-        label="Fal.ai Flux Schnell (快)",
-        description="fal.ai flux/schnell 模型，~2s/张，适合批量生成",
-        env_vars=["FAL_KEY"],
-        endpoint=f"{_PROVIDER_ENDPOINTS['fal']}/fal-ai/flux/schnell",
-        model_id="fal-ai/flux/schnell",
-        provider_class="FalAiProvider",
-    ),
-    ProviderMeta(
-        name="fal-pro",
-        label="Fal.ai Flux Pro (精)",
-        description="fal.ai flux/pro 模型，~8s/张，高质量电商图",
-        env_vars=["FAL_KEY"],
-        endpoint=f"{_PROVIDER_ENDPOINTS['fal']}/fal-ai/flux-pro/v1.1-ultra",
-        model_id="fal-ai/flux-pro/v1.1-ultra",
-        provider_class="FalAiProvider",
-    ),
-    ProviderMeta(
-        name="siliconflow-fast",
-        label="硅基流动 Flux Schnell (快)",
-        description="国内硅基流动 Flux Schnell，~2s/张，不超时",
-        env_vars=["SILICONFLOW_KEY"],
-        endpoint=_PROVIDER_ENDPOINTS["siliconflow"],
-        model_id="black-forest-labs/FLUX.1-schnell",
-        provider_class="SiliconFlowProvider",
-    ),
-    ProviderMeta(
-        name="siliconflow-pro",
-        label="硅基流动 Flux Pro (精)",
-        description="国内硅基流动 Flux Pro，~8s/张，高质感",
-        env_vars=["SILICONFLOW_KEY"],
-        endpoint=_PROVIDER_ENDPOINTS["siliconflow"],
-        model_id="black-forest-labs/FLUX.1-pro",
-        provider_class="SiliconFlowProvider",
-    ),
     ProviderMeta(
         name="agnes",
         label="Agnes AI (免费)",
@@ -88,6 +50,15 @@ PROVIDER_REGISTRY: list[ProviderMeta] = [
         endpoint=_PROVIDER_ENDPOINTS["volcengine"],
         model_id="doubao-seedream-5-0-260128",
         provider_class="VolcEngineArkProvider",
+    ),
+    ProviderMeta(
+        name="gpt-image-2",
+        label="GPT Image-2 (Agnes兼容)",
+        description="Agnes gpt-image-2 模型，图生图/文生图",
+        env_vars=["AGNES_API_KEY"],
+        endpoint=_PROVIDER_ENDPOINTS["agnes"],
+        model_id="gpt-image-2",
+        provider_class="AgnesProvider",
     ),
     ProviderMeta(
         name="codex",
@@ -123,6 +94,8 @@ def get_provider_list() -> list[dict]:
             "name": meta.name,
             "label": meta.label,
             "description": meta.description,
+            "model_id": meta.model_id,
+            "endpoint": meta.endpoint,
             "available": avail.get(meta.name, False),
             "is_default": meta.is_default,
         })
