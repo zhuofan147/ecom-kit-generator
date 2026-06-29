@@ -572,7 +572,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => { const n = { selectedLlmConfigId: id }; writePersistedSettings({ ...persistable(state), ...n }); return n; }),
   selectImageConfig: (id) =>
     set((state) => {
-      const n = { selectedImageConfigId: id };
+      const cfg = state.imageConfigs.find(c => c.id === id);
+      const provider = cfg ? normalizeImageProvider(cfg.model || cfg.id) : "";
+      const n = {
+        selectedImageConfigId: id,
+        providers: provider ? [provider] : state.providers,
+      };
       writePersistedSettings({ ...persistable(state), ...n });
       return n;
     }),

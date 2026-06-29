@@ -182,7 +182,9 @@ function ModelConfigSection({
   title,
   modelType,
   configs,
+  selectedId,
   onAdd,
+  onSelect,
   onUpdate,
   onRemove,
   presets,
@@ -214,6 +216,8 @@ function ModelConfigSection({
             key={config.id}
             modelType={modelType}
             config={config}
+            isSelected={config.id === selectedId}
+            onSelect={onSelect ? () => onSelect(config.id) : undefined}
             onUpdate={(patch) => onUpdate(config.id, patch)}
             onApplyPreset={presets ? (presetId) => onUpdate(config.id, applyModelPreset(config, presetId, presets)) : undefined}
             onRemove={() => onRemove(config.id)}
@@ -234,6 +238,8 @@ function ConfigCard({
   onApplyPreset,
   onRemove,
   presets,
+  isSelected,
+  onSelect,
 }: {
   modelType: ConfigModelType;
   config: ModelConfig;
@@ -241,6 +247,8 @@ function ConfigCard({
   onApplyPreset?: (presetId: string) => void;
   onRemove: () => void;
   presets?: ModelPreset[];
+  isSelected?: boolean;
+  onSelect?: () => void;
 }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
@@ -299,7 +307,18 @@ function ConfigCard({
   const statusLabel = !isConfigured ? "未配置" : isEnabled ? "已启用" : "已停用";
 
   return (
-    <div className="rounded border border-line bg-panel p-3">
+    <div
+      className={`rounded border bg-panel p-3 ${
+        isSelected
+          ? "border-action/60 shadow-sm ring-1 ring-action/30"
+          : "border-line"
+      } ${onSelect ? "cursor-pointer hover:border-action/40 transition-colors" : ""}`}
+      onClick={onSelect}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      aria-pressed={onSelect ? isSelected : undefined}
+      style={onSelect ? { touchAction: "manipulation" } : undefined}
+    >
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
         <button
           type="button"

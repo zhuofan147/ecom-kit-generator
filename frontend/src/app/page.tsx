@@ -234,9 +234,15 @@ export default function Home() {
           return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
         })(),
         imageConfigs: providers.map((p) => {
-          const c = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p) ??
-            imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
-          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+          const primary = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p);
+          if (primary) return { apiUrl: primary.apiUrl, apiKey: primary.apiKey, model: primary.model };
+          const fallback = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
+          if (fallback) {
+            console.warn(`[page.tsx] provider "${p}" 无匹配配置，回退到 ${selectedImageConfigId}`);
+            return { apiUrl: fallback.apiUrl, apiKey: fallback.apiKey, model: fallback.model };
+          }
+          console.warn(`[page.tsx] provider "${p}" 无可用配置，已跳过`);
+          return undefined;
         }).filter((x): x is ApiModelConfig => Boolean(x)),
         visionConfig: (() => {
           const c = usableModelConfig(visionConfigs, selectedVisionConfigId);
@@ -314,9 +320,15 @@ export default function Home() {
           return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
         })(),
         imageConfigs: providers.map((p) => {
-          const c = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p) ??
-            imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
-          return c ? { apiUrl: c.apiUrl, apiKey: c.apiKey, model: c.model } : undefined;
+          const primary = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && normalizeImageProvider(c.model || c.id) === p);
+          if (primary) return { apiUrl: primary.apiUrl, apiKey: primary.apiKey, model: primary.model };
+          const fallback = imageConfigs.find(c => c.enabled !== false && hasCompleteModelConfig(c) && c.id === selectedImageConfigId);
+          if (fallback) {
+            console.warn(`[page.tsx] provider "${p}" 无匹配配置，回退到 ${selectedImageConfigId}`);
+            return { apiUrl: fallback.apiUrl, apiKey: fallback.apiKey, model: fallback.model };
+          }
+          console.warn(`[page.tsx] provider "${p}" 无可用配置，已跳过`);
+          return undefined;
         }).filter((x): x is ApiModelConfig => Boolean(x)),
         visionConfig: (() => {
           const c = usableModelConfig(visionConfigs, selectedVisionConfigId);
