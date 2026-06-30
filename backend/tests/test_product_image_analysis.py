@@ -119,7 +119,7 @@ def test_extract_image_url_accepts_async_result_images_url_list():
 def test_provider_alias_model_override_keeps_registry_model_id():
     provider = create_provider("agnes", model_id_override="agnes")
 
-    assert provider.model_id == "agnes-image-2.1-flash"
+    assert provider.model_id == "agnes-image-2.0-flash"
 
 
 def test_filter_model_ids_keeps_only_image_models_for_image_cards():

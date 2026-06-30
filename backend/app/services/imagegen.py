@@ -153,7 +153,7 @@ class AgnesProvider(ImageGenerationProvider):
         self.provider_name = name
         self.api_key = os.environ.get("AGNES_API_KEY", "")
         self.endpoint = endpoint or "https://apihub.agnes-ai.com/v1/images/generations"
-        self.model_id = model_id or "agnes-image-2.1-flash"
+        self.model_id = model_id or "agnes-image-2.0-flash"
 
     async def _poll_async_task(self, task_id: str, api_key: str, timeout: int = 600, interval: int = 3) -> str:
         """Poll an async token商 task until complete, return the image URL."""

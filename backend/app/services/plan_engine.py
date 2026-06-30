@@ -198,6 +198,7 @@ _AI_PLAN_SYSTEM_PROMPT = """你是一个顶级电商图生图套图策划专家�
 - 必须基于对应模板填空，不改变结构。
 - 保留模板中的布光/相机参数/占比等技术参数。
 - 禁止使用DONT/DON'T/DO NOT/no/without等否定指令，用正面引导。
+- 所有需要在图片中显示的文字（标题、卖点、标签、标注等），必须用英文双引号 "..." 包裹，让生图模型知道这是要渲染的文字。
 - 禁止重新描述产品外观特征（颜色/材质/形状），靠参考图传递。
 
 输出格式必须为严格JSON，不要任何markdown标记：
@@ -235,7 +236,7 @@ kit_type必须使用请求中的类型值并保持顺序。
 
 TEMPLATE_WHITE_BG = """[PRODUCT] centered, occupying 70-80% of frame. Pure white background RGB(255,255,255). Professional studio lighting: top softbox + dual side fill lights, even and soft, no hard shadows. Natural soft shadow beneath product. Front view, eye-level. Commercial product photography style."""
 
-TEMPLATE_SELLING_POINT = """[PRODUCT] centered. [GRADIENT_COLOR] gradient background. Annotation arrows pointing to: [SELLING_POINT_1], [SELLING_POINT_2], [SELLING_POINT_3]. Callout boxes with clean text layout, whitespace around each annotation. 45-degree side lighting, natural shadow. High-end commercial feel."""
+TEMPLATE_SELLING_POINT = """[PRODUCT] centered. [GRADIENT_COLOR] gradient background. Annotation arrows pointing to: "[SELLING_POINT_1]", "[SELLING_POINT_2]", "[SELLING_POINT_3]". Callout boxes with clean text reading "[MAIN_TITLE]" and subtitle "[SUBTITLE]". Whitespace around each annotation. 45-degree side lighting, natural shadow. High-end commercial feel."""
 
 TEMPLATE_SCENE = """[PRODUCT] placed in [SCENE_DESC]. Surrounding props: [PROPS] to build atmosphere. Product remains visual center. Scene title "[TITLE]" at top-left. 85mm f/1.4, shallow depth of field, warm natural lighting."""
 

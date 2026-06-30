@@ -39,7 +39,7 @@ PROVIDER_REGISTRY: list[ProviderMeta] = [
         description="新加坡 Sapiens AI 全模态免费 API，图生图/文生图，速度快",
         env_vars=["AGNES_API_KEY"],
         endpoint=_PROVIDER_ENDPOINTS["agnes"],
-        model_id="agnes-image-2.1-flash",
+        model_id="agnes-image-2.0-flash",
         provider_class="AgnesProvider",
     ),
     ProviderMeta(

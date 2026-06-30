@@ -335,6 +335,7 @@ def build_prompt(platform: str, kit_type: KitType, product_info: ProductInfo) ->
 
 def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scene: str, dimensions: str = "") -> str:
     """Rich English prompts optimized for Amazon/Shopify/eBay."""
+    quoted_features = ", ".join(f'"{point}"' for point in points[:4]) if points else '"key selling points"'
     prompts = {
         KitType.MAIN_WHITE: (
             f"Product centered in frame, pure white background (RGB 255,255,255). "
@@ -354,7 +355,7 @@ def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
         KitType.SELLING_POINT: (
             f"Amazon A+ Content style product feature infographic. "
             f"Layout: product prominently on left side (55%), feature text blocks on right (45%). "
-            f"Features include: {', '.join(points[:4]) if points else 'key selling points'}. "
+            f"Features include: {quoted_features}. "
             f"Use only very short English feature labels or clean blank text placeholders; avoid dense paragraphs. "
             f"Soft gradient background from pearl white to light gray. "
             f"Professional sans-serif typography, clean modern information design. "
@@ -363,7 +364,7 @@ def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
         KitType.SIZE_COMPARE: (
             f"Product shown next to an iPhone for scale comparison. "
             f"Side-by-side layout on a clean white surface. "
-            f"Dimensional arrows with measurements: {dimensions or 'both inches and cm'}. "
+            f"Dimensional arrows with measurements: \"{dimensions or 'both inches and cm'}\". "
             f"Professional infographic style, light gray background, studio lighting."
         ),
         KitType.DETAIL: (
@@ -371,31 +372,31 @@ def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
             f"Split composition showing 2-3 detail zones: "
             f"surface texture / stitching quality / sole or bottom detail. "
             f"Shallow depth of field on each zone, studio lighting reveals craftsmanship. "
-            f"Clean arrows pointing to each zone with minimal labels. Premium quality."
+            f"Clean arrows pointing to each zone with minimal labels such as \"surface texture\", \"stitching quality\", \"sole detail\". Premium quality."
         ),
         KitType.USAGE_SCENE: (
             f"Multi-scene lifestyle collage: 3 usage scenarios side by side in {w}x{h} frame. "
             f"Scene 1 — Commute: person wearing the product on a modern city street, morning light. "
             f"Scene 2 — Leisure: person relaxing in a park, product clearly visible, warm afternoon sun. "
             f"Scene 3 — Shopping: person in a bright mall, casual outfit. "
-            f"Each scene labeled with a clean English word overlay. "
-            f"Top banner: 'Made for Everyday You' in bold elegant font. "
+            f"Each scene labeled with a clean English word overlay: \"Commute\", \"Leisure\", \"Shopping\". "
+            f"Top banner: \"Made for Everyday You\" in bold elegant font. "
             f"Magazine lifestyle editorial quality, warm natural tones, product visible in every scene."
         ),
         KitType.SKU_VARIANTS: (
             f"6 color variants of the product in a 2x3 grid on pure white background. "
             f"Variants: White, Black, Gray, Navy, Beige, Olive Green. "
-            f"Each cell shows one variant with color name label below. "
+            f"Each cell shows one variant with color name label below: \"White\", \"Black\", \"Gray\", \"Navy\", \"Beige\", \"Olive Green\". "
             f"Consistent 3/4 angle and lighting across all cells. "
-            f"Top header: 'Choose Your Style' in clean sans-serif. "
+            f"Top header: \"Choose Your Style\" in clean sans-serif. "
             f"Professional Amazon catalog style, each variant sharp and clear."
         ),
         KitType.DETAIL_PAGE: (
             f"Long-form Amazon A+ detail page with 4 stacked sections, {w}x{h}px: "
-            f"HERO: Full-width product shot with headline 'Light Steps, Confident Every Day' in bold, "
-            f"subheadline 'Thoughtful details for all-day comfort and easy movement'. "
-            f"FEATURES: 3-column layout — Breathable & Skin-Friendly Upper / Supportive Heel Design / "
-            f"Non-Slip Durable Outsole — each with close-up and 2-line English description. "
+            f"HERO: Full-width product shot with headline \"Light Steps, Confident Every Day\" in bold, "
+            f"subheadline \"Thoughtful details for all-day comfort and easy movement\". "
+            f"FEATURES: 3-column layout — \"Breathable & Skin-Friendly Upper\" / \"Supportive Heel Design\" / "
+            f"\"Non-Slip Durable Outsole\" — each with close-up and 2-line English description. "
             f"MATERIALS: Clean infographic showing material breakdown with labeled callouts. "
             f"SIZE GUIDE: Simple size chart table. "
             f"Plenty of white space, soft color accents, professional typography. "
@@ -404,14 +405,14 @@ def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
         KitType.CAROUSEL: (
             f"Wide homepage carousel banner {w}x{h}px. "
             f"Bold composition: product on right side, large English headline on left: "
-            f"'Step Into Comfort'. Subheadline: 'All-day cushioning, everyday style'. "
+            f"\"Step Into Comfort\". Subheadline: \"All-day cushioning, everyday style\". "
             f"Vibrant gradient background, dramatic lighting on product. "
             f"Promotional badge in corner. Modern ecommerce hero banner quality."
         ),
         KitType.VIDEO_COVER: (
             f"YouTube thumbnail style, 16:9 {w}x{h}px. "
             f"Product hero shot with dramatic contrast lighting. "
-            f"Bold English text: 'UNBOXING & REVIEW' or 'ON FEET TEST'. "
+            f"Bold English text: \"UNBOXING & REVIEW\" or \"ON FEET TEST\". "
             f"High-contrast color grade, subtle glow effect. Click-worthy composition."
         ),
     }
@@ -420,6 +421,7 @@ def _overseas_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
 
 def _domestic_prompts(kt: KitType, w: int, h: int, name: str, points: list, scene: str, dimensions: str = "") -> str:
     """Rich Chinese prompts optimized for 淘宝/京东/拼多多/抖音/小红书."""
+    quoted_points = "、".join(f'"{point}"' for point in points[:4]) if points else '"核心卖点"'
     prompts = {
         KitType.MAIN_WHITE: (
             f"产品居中构图，纯白背景。产品占画面85%以上面积。"
@@ -437,42 +439,42 @@ def _domestic_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
         KitType.SELLING_POINT: (
             f"淘宝/天猫详情页风格的产品卖点信息图。"
             f"布局：产品左侧展示（占55%宽度），右侧卖点文案板块（占45%）。"
-            f"卖点包括：{'、'.join(points[:4]) if points else '核心卖点'}。"
+            f"卖点包括：{quoted_points}。"
             f"每条卖点仅使用图标和极短中文标签，复杂中文长句留白后期叠加，避免生成乱码文字。"
             f"背景从米白到浅灰的柔和渐变，现代简约信息设计。"
             f"专业无衬线字体排版，文字区域保持干净克制。"
         ),
         KitType.SIZE_COMPARE: (
             f"产品与一部iPhone并排对比大小。"
-            f"干净的浅色台面，标注尺寸箭头，尺寸标注：{dimensions or '厘米和英寸'}。"
+            f"干净的浅色台面，标注尺寸箭头，尺寸标注：\"{dimensions or '厘米和英寸'}\"。"
             f"专业信息图风格，浅灰背景，棚拍布光。"
         ),
         KitType.DETAIL: (
             f"产品材质和工艺的极致微距特写摄影。"
             f"分割画面展示2-3个细节区域：鞋面纹理 / 缝线做工 / 鞋底花纹。"
             f"每个区域浅景深突出质感，棚拍灯光展现做工品质。"
-            f"干净箭头指向每个区域带简短标注。精品品质感。"
+            f"干净箭头指向每个区域带简短标注：\"鞋面纹理\"、\"缝线做工\"、\"鞋底花纹\"。精品品质感。"
         ),
         KitType.USAGE_SCENE: (
             f"三场景生活拼贴图，{w}x{h}像素内并排展示3个使用场景："
             f"场景一「通勤」— 人物穿着产品走在现代都市街道，晨光氛围。"
             f"场景二「休闲」— 人物在公园放松，产品清晰可见，午后暖阳。"
             f"场景三「逛街」— 人物在明亮商场，休闲穿搭。"
-            f"每个场景叠加中文标签。顶部标题大字：「为你的每一天而生」。"
+            f"每个场景叠加中文标签：\"通勤\"、\"休闲\"、\"逛街\"。顶部标题大字：\"为你的每一天而生\"。"
             f"杂志级生活方式摄影，温暖自然色调，每个场景产品清晰可见。"
         ),
         KitType.SKU_VARIANTS: (
             f"6种颜色款式在纯白背景上以2x3网格排列。"
             f"颜色包括：白色、黑色、灰色、藏青、米色、橄榄绿。"
-            f"每格展示一个颜色款，下方标注中文颜色名。"
-            f"所有角度和光线保持一致。顶部标题：「选择你的风格」。"
+            f"每格展示一个颜色款，下方标注中文颜色名：\"白色\"、\"黑色\"、\"灰色\"、\"藏青\"、\"米色\"、\"橄榄绿\"。"
+            f"所有角度和光线保持一致。顶部标题：\"选择你的风格\"。"
             f"专业天猫/京东级商品目录风格，每款清晰锐利。"
         ),
         KitType.DETAIL_PAGE: (
             f"淘宝/天猫详情页长图，{w}x{h}像素，4个纵向板块堆叠："
-            f"板块1「头图」— 全宽产品展示，标题大字「舒适每一步，自信每一天」，"
-            f"副标题「全天候舒适体验，从细节开始」。"
-            f"板块2「卖点」— 三栏布局：透气亲肤鞋面 / 稳固后跟支撑 / 防滑耐磨外底，"
+            f"板块1「头图」— 全宽产品展示，标题大字\"舒适每一步，自信每一天\"，"
+            f"副标题\"全天候舒适体验，从细节开始\"。"
+            f"板块2「卖点」— 三栏布局：\"透气亲肤鞋面\" / \"稳固后跟支撑\" / \"防滑耐磨外底\"，"
             f"每栏配局部特写图和一段中文描述。"
             f"板块3「材质」— 信息图风格展示材质分解，带标注箭头指向产品。"
             f"板块4「尺码」— 简洁的尺码对照表。"
@@ -480,15 +482,15 @@ def _domestic_prompts(kt: KitType, w: int, h: int, name: str, points: list, scen
         ),
         KitType.CAROUSEL: (
             f"首页轮播横幅 {w}x{h}像素。"
-            f"大胆构图：产品居中偏右，左侧大字中文标题「踏出舒适每一步」。"
-            f"副标题「全天候缓震，每日型搭」。"
+            f"大胆构图：产品居中偏右，左侧大字中文标题\"踏出舒适每一步\"。"
+            f"副标题\"全天候缓震，每日型搭\"。"
             f"渐变品牌色背景，产品戏剧化布光。角落促销标签。"
             f"现代电商首页横幅品质。"
         ),
         KitType.VIDEO_COVER: (
             f"视频封面图 16:9比例 {w}x{h}像素。"
             f"产品特写带强对比布光。"
-            f"大字中文标题：「开箱实测」或「上脚体验」。"
+            f"大字中文标题：\"开箱实测\"或\"上脚体验\"。"
             f"高对比度调色，微妙辉光效果。点击欲强的封面构图。"
         ),
     }
